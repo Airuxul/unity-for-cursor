@@ -40,7 +40,15 @@ here.
    extension to own the C# debug engine at a time. Reload the window after changing this.
 3. Unity's **Script Debugging / Editor Attaching** preference must be enabled (on by default).
 
-## Build
+## Download
+
+Prebuilt `.vsix` files are published on the
+[Releases page](https://github.com/Airuxul/unity-for-cursor/releases) — no need to build from
+source. Every push to `master` also produces a build artifact under the
+[Actions tab](https://github.com/Airuxul/unity-for-cursor/actions) if you want the latest
+in-progress build.
+
+## Build from source
 
 ```powershell
 cd tools/unity-for-cursor
@@ -51,12 +59,8 @@ npm run package   # produces unity-for-cursor-<version>.vsix
 
 ## Install
 
-- Command Palette → `Extensions: Install from VSIX...` → pick the generated `.vsix`; or
+- Command Palette → `Extensions: Install from VSIX...` → pick the `.vsix`; or
 - `cursor --install-extension unity-for-cursor-<version>.vsix` if the `cursor` CLI is on `PATH`.
-
-> When upgrading an already-installed copy, fully uninstall the old one from the Extensions view
-> first rather than reinstalling over the same version — some VS Code–based IDEs cache extension
-> metadata (including the icon) per version and won't pick up in-place changes otherwise.
 
 ## Usage
 
@@ -119,8 +123,19 @@ resources/
   icon.png                    extension icon
 ```
 
+## Releasing
+
+Bump `"version"` in `package.json`, commit, then push a matching tag:
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The `Release` workflow builds the `.vsix` and attaches it to a new GitHub Release automatically.
+
 ## Development notes
 
-This is an internal tool, not published to a public marketplace — `vsce package` will warn about
-a missing `repository` field and license file; both are expected and intentionally left as-is
-until/unless this gets published externally.
+This is not published to the VS Code Marketplace by design — `vsce package` will warn about a
+missing `repository` field and license file; both are expected and intentionally left as-is unless
+that changes.

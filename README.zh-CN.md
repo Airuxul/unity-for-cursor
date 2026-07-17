@@ -33,7 +33,14 @@ Cursor 无法使用微软的 **C# Dev Kit** ——其授权协议限制只能在
    重新加载窗口。
 3. Unity 的 **Script Debugging / Editor Attaching** 选项必须开启（默认开启）。
 
-## 构建
+## 下载
+
+已经打包好的 `.vsix` 发布在
+[Releases 页面](https://github.com/Airuxul/unity-for-cursor/releases)，不需要自己从源码构建。每次向
+`master` 推送代码后，[Actions 标签页](https://github.com/Airuxul/unity-for-cursor/actions) 下也会自动
+产出一份构建产物，如果想拿最新的开发中版本可以从那里下载。
+
+## 从源码构建
 
 ```powershell
 cd tools/unity-for-cursor
@@ -44,11 +51,8 @@ npm run package   # 生成 unity-for-cursor-<version>.vsix
 
 ## 安装
 
-- 命令面板 → `Extensions: Install from VSIX...` → 选择生成的 `.vsix`；或
+- 命令面板 → `Extensions: Install from VSIX...` → 选择 `.vsix`；或
 - 若 `cursor` CLI 已在 `PATH` 中：`cursor --install-extension unity-for-cursor-<version>.vsix`。
-
-> 升级已安装的版本时，建议先在 Extensions 视图中彻底卸载旧版本，而不是直接用同一版本号覆盖安装——部分基于
-> VS Code 的 IDE 会按"插件 ID + 版本号"缓存插件元数据（包括图标），版本号不变时未必会重新读取。
 
 ## 使用方法
 
