@@ -11,40 +11,19 @@ Unity Editor 进程，并提供一系列旨在拉近与 JetBrains Rider 内置 U
 
 ## 为什么会有这个插件
 
-微软官方在 VS Code 中调试 Unity 的路径是 **C# Dev Kit** + **Unity**
-（[Visual Studio Tools for Unity](https://marketplace.visualstudio.com/items?itemName=VisualStudioToolsForUnity.vstuc)）
-插件组合，底层使用微软的 `coreclr` 调试引擎。本项目面向已经在使用、或更倾向于使用 JetBrains ReSharper 工具链的团队，
-希望在不离开 Cursor 的前提下获得同样的调试体验——它并不是要替代或竞争 Dev Kit 这条路径，而是服务于另一套工具链。
-
-| 能力 | Unity for Cursor + ReSharper | C# Dev Kit + Unity (VSTUC) |
-|---|---|---|
-| Attach 入口 | Run and Debug 面板中的顶级入口 **"Unity for Cursor"** | 顶级入口 **"Unity"** |
-| 调试引擎 | JetBrains 的 `mono` 调试器 | 微软的 `coreclr` 调试器 |
-| Editor 进程发现 | 自动发现（通过 `-projectpath` 与当前工作区匹配） | 自动发现 |
-| 按路径忽略断点 | 支持 —— `unityForCursor.ignoreBreakpointsGlobs` | 未提供 |
-| Domain Reload 后自动重连 | 支持（限已处于 attach 状态的会话） | 未验证 |
-| `Editor.log` 实时流 + 点击跳转 | 支持 | 未提供 |
-| 许可要求 | 需要 JetBrains ReSharper 授权 | 免费 |
-
-VSTUC 一列的信息来自其公开的插件清单与文档，并非对其所有工作流做过详尽的端到端测试——请将其视为方向性对比，
-而非权威评测。
+Cursor 无法使用微软的 **C# Dev Kit**——其授权协议限制只能在微软自家的 VS Code 和 Visual Studio 中使用，因此官方的
+"C# Dev Kit + Unity" 调试方案在 Cursor 里根本不可用。本插件的目标，是让 Cursor 里开发 Unity 的体验尽量接近 JetBrains
+Rider 原生自带的水平，做法是改用 JetBrains **"C# by ReSharper"** 的调试器来 attach。
 
 ## 功能特性
 
-- **顶级 Attach 入口。** 注册了独立的 `unity-for-cursor-attach` 调试器类型，使 "Unity for Cursor" 直接出现在
-  "Select debugger" 选择器的顶层，而不是嵌套在 ReSharper 的 "More Mono options..." 之下。
-- **自动发现 Editor 进程。** 通过匹配运行中的 `Unity.exe` 进程的 `-projectpath` 参数与当前工作区，并基于操作系统级
-  的监听端口信息解析调试端口——具体原因见下方[端口发现原理](#端口发现原理)。
-- **`Editor.log` 实时流 + 点击跳转。** `Unity for Cursor: Show Unity Editor Log` 命令会将本机的 `Editor.log`
-  实时输出到一个 Output Channel 中；形如 `(at Assets/Scripts/Foo.cs:42)` 的堆栈行会变成可点击链接，直接跳转到对应
-  文件和行号。
-- **按路径忽略断点。** `unityForCursor.ignoreBreakpointsGlobs` 配置项会自动禁用匹配路径下新增的断点（默认匹配
-  `Library/` 与 `Packages/`）；用户手动重新启用的断点不会被再次禁用。
-- **Domain Reload 后自动重连。** 仅限于已经处于 attach 状态的会话：脚本重新编译会导致调试连接断开，本插件通过
-  监测 Unity 进程的调试端口是否真的先消失、再重新出现，来区分"Domain Reload"与"手动断开连接"，并在确认是前者时
-  自动重新 attach。
-- **异常断点** 开箱即用——这是 ReSharper 的 `mono` 适配器原生支持的能力，attach 成功后即可在 Run and Debug 视图的
-  Breakpoints 面板中看到常规的异常过滤复选框。
+- **调试** —— 支持断点（含异常断点），可以对 Unity Editor 中运行的 C# 代码单步调试。
+- **自动发现 Editor 进程** —— 无需手动填端口，原理见下方[端口发现原理](#端口发现原理)。
+- **`Editor.log` 实时流 + 点击跳转** —— `Unity for Cursor: Show Unity Editor Log` 命令实时输出日志，形如
+  `(at Foo.cs:42)` 的堆栈行可直接点击跳转到对应文件和行号。
+- **按路径忽略断点** —— `unityForCursor.ignoreBreakpointsGlobs` 会自动禁用匹配路径下新增的断点（默认匹配
+  `Library/` 与 `Packages/`）。
+- **Domain Reload 后自动重连** —— 对已处于 attach 状态的会话，脚本重新编译后不再需要手动重新 attach。
 
 ## 前置依赖
 
@@ -96,23 +75,10 @@ npm run package   # 生成 unity-for-cursor-<version>.vsix
 
 ## 端口发现原理
 
-Unity 官方文档给出的约定是 `56000 + (Editor PID % 1000)`，但实践中这个端口经常并非实际使用的端口——即便开启了
-Editor Attaching，如果该端口已被占用，实际监听端口也会发生偏移。因此本插件采用如下策略：
-
-- 使用 `Get-CimInstance Win32_Process` 查找本机的 `Unity.exe` 进程，通过（小写化后的）`-projectpath` 参数与当前
-  工作区匹配。
-- 使用 `Get-NetTCPConnection -OwningProcess <pid> -State Listen` 列出该进程实际监听的端口。
-- 若只匹配到唯一进程，且公式端口确实在其监听端口列表中，则直接 attach；否则弹出选择器（公式端口命中的选项会
-  额外标注）。
-
-**本插件刻意不会为了验证候选端口而预先建立一次真实连接。** Unity 内置的 mono 调试代理
-（`server=y,suspend=n`）在每个 Editor 会话中只服务**一次**入站连接——本插件早期版本曾在正式 attach 前先做一次
-握手验证，但那次验证本身就消耗掉了这唯一的连接名额，导致随后的真正 attach 每次都会因握手超时而失败。因此端口的
-选定完全基于操作系统级的监听端口信息，不做任何连接层面的探测。
-
-如果没有任何监听端口匹配（包括公式端口），请检查 Unity 的 **Editor Attaching** 选项是否开启，以及防火墙是否拦截了
-56000–59999 端口范围。若同时打开了多个指向不同项目的 Unity 窗口，`-projectpath` 会自动区分；如果仍然匹配错误，
-可以使用选择器手动指定。
+Unity 官方文档给出的端口公式 `56000 + (Editor PID % 1000)` 并不总是实际在用的端口。本插件改为通过
+`-projectpath` 参数匹配运行中的 `Unity.exe` 进程与当前工作区，再读取该进程实际监听的端口来确定调试端口——
+刻意不预先建立一次真实连接来验证候选端口，因为 Unity 内置的调试代理每个 Editor 会话只服务一次入站连接，
+提前的验证连接会把这唯一的连接名额消耗掉，导致随后真正的 attach 失败。
 
 ## 已知限制 / 后续规划
 

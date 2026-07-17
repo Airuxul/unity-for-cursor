@@ -13,48 +13,24 @@ streaming, breakpoint filtering, auto re-attach — is this extension's own code
 
 ## Why this exists
 
-Microsoft's own path for Unity debugging in VS Code is the **C# Dev Kit** + **Unity**
-([Visual Studio Tools for Unity](https://marketplace.visualstudio.com/items?itemName=VisualStudioToolsForUnity.vstuc))
-extension pair, backed by Microsoft's `coreclr` debug engine. This project is for teams that
-already use, or prefer, JetBrains' ReSharper tooling and want that same debugging workflow without
-leaving Cursor — it does not replace or compete with the Dev Kit path, it targets a different
-toolchain.
-
-| Capability | Unity for Cursor + ReSharper | C# Dev Kit + Unity (VSTUC) |
-|---|---|---|
-| Attach entry point | Top-level **"Unity for Cursor"** entry in Run and Debug | Top-level **"Unity"** entry |
-| Debug engine | JetBrains' `mono` debugger | Microsoft's `coreclr` debugger |
-| Editor process discovery | Automatic (matches `-projectpath` against open workspace) | Automatic |
-| Ignore breakpoints by path | Yes — `unityForCursor.ignoreBreakpointsGlobs` | Not exposed |
-| Auto re-attach after Domain Reload | Yes, for sessions that were already attached | Not verified |
-| `Editor.log` streaming with click-to-file | Yes | Not exposed |
-| License requirement | Requires a JetBrains ReSharper license | Free |
-
-The VSTUC column reflects its published manifest and documentation, not exhaustive end-to-end
-testing of every workflow — treat it as a directional comparison, not a certified benchmark.
+Cursor can't use Microsoft's **C# Dev Kit** — its license restricts it to Microsoft's own VS Code
+and Visual Studio, so the official "C# Dev Kit + Unity" debugging path simply isn't available
+here. This extension's goal is to bring Unity development in Cursor as close as possible to what
+JetBrains Rider already provides natively, by attaching JetBrains **"C# by ReSharper"**'s debugger
+instead.
 
 ## Features
 
-- **Top-level attach entry.** Registers its own `unity-for-cursor-attach` debugger type so "Unity
-  for Cursor" shows up directly in the "Select debugger" picker, instead of being nested under
-  "More ReSharper: Mono options...".
-- **Automatic Editor discovery.** Matches running `Unity.exe` processes against the open
-  workspace by `-projectpath`, and resolves the debug port from OS-level listening-port
-  information — see [How port discovery works](#how-port-discovery-works) for why it deliberately
-  avoids a live connection probe.
-- **`Editor.log` streaming with click-to-file.** `Unity for Cursor: Show Unity Editor Log` tails
-  the local `Editor.log` into an output channel in real time; stack frames like
-  `(at Assets/Scripts/Foo.cs:42)` become clickable links that jump to the exact file and line.
-- **Ignore breakpoints by path.** The `unityForCursor.ignoreBreakpointsGlobs` setting
-  auto-disables newly added breakpoints under matching paths (defaults to `Library/` and
-  `Packages/`); manually re-enabling one afterward is left alone.
-- **Auto re-attach after Domain Reload.** Scoped to sessions that were already attached: a script
-  recompile drops the debugger connection, and this extension detects the difference between that
-  and a manual disconnect by watching whether the Unity process's debug port actually disappears
-  and reappears, then re-attaches automatically.
-- **Exception breakpoints** work out of the box — ReSharper's `mono` adapter implements this
-  natively, so once attached you'll see the usual exception filter checkboxes in the Run and
-  Debug view's Breakpoints panel.
+- **Debugging** — set breakpoints (including exception breakpoints) and step through C# code
+  running in the Unity Editor.
+- **Automatic Editor discovery** — no manual port entry; see
+  [How port discovery works](#how-port-discovery-works).
+- **`Editor.log` streaming with click-to-file** — `Unity for Cursor: Show Unity Editor Log` tails
+  the log live, and stack frames like `(at Foo.cs:42)` jump straight to the file and line.
+- **Ignore breakpoints by path** — `unityForCursor.ignoreBreakpointsGlobs` auto-disables new
+  breakpoints under matching paths (defaults to `Library/` and `Packages/`).
+- **Auto re-attach after Domain Reload** — for sessions that were already attached, a script
+  recompile no longer requires attaching again by hand.
 
 ## Requirements
 
@@ -108,28 +84,12 @@ npm run package   # produces unity-for-cursor-<version>.vsix
 
 ## How port discovery works
 
-Unity's documented convention is `56000 + (Editor PID % 1000)`, but in practice that port is
-often not the one actually in use — even with Editor Attaching enabled, the port can shift if it's
-already taken. So this extension:
-
-- Uses `Get-CimInstance Win32_Process` to find local `Unity.exe` processes, matching the
-  (lowercase) `-projectpath` argument against the open workspace.
-- Uses `Get-NetTCPConnection -OwningProcess <pid> -State Listen` to list the ports that process is
-  actually listening on.
-- Attaches directly if there's exactly one matching process and the formula port is among its
-  listening ports; otherwise prompts with a picker (formula-port matches are labeled).
-
-**It deliberately never opens a real connection to a candidate port to verify it first.** Unity's
-embedded mono debugger agent (`server=y,suspend=n`) only services a single incoming connection per
-Editor session — an early version of this extension did a handshake-based verification probe
-before attaching, and that probe itself consumed the one-shot connection slot, making the real
-attach that followed fail every time with a handshake timeout. Port selection is therefore based
-purely on OS-level listening-port information.
-
-If no listening port matches (including the formula port), check Unity's **Editor Attaching**
-preference and whether a firewall is blocking the 56000–59999 range. With multiple Unity windows
-open on different projects, `-projectpath` disambiguates automatically; use the picker to choose
-manually if it still guesses wrong.
+Unity's documented port formula (`56000 + Editor PID % 1000`) isn't always the port actually in
+use. This extension instead matches running `Unity.exe` processes to the open workspace by
+`-projectpath`, then reads the OS-level listening ports for that process to pick the right one —
+it deliberately never opens a probe connection first, since Unity's embedded debugger only accepts
+one incoming connection per Editor session, and a verification probe would consume that slot
+before the real attach gets a chance.
 
 ## Known limitations / roadmap
 
