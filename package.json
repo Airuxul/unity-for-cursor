@@ -4,6 +4,7 @@
   "description": "Discover the local Unity Editor process and attach the JetBrains \"C# by ReSharper\" mono debugger to it for breakpoint debugging.",
   "version": "0.0.1",
   "publisher": "local",
+  "author": "Airuxul",
   "private": true,
   "icon": "resources/icon.png",
   "engines": {
@@ -17,8 +18,7 @@
     "JetBrains.resharper-code"
   ],
   "activationEvents": [
-    "onStartupFinished",
-    "onCommand:cursorUnityAttach.attachToEditor"
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
