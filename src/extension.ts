@@ -1,8 +1,12 @@
 import * as vscode from 'vscode';
-import { attachToUnityEditor, UnityAttachDebugConfigurationProvider, UNITY_FOR_CURSOR_DEBUG_TYPE } from './attach';
-import { registerAutoReattach } from './reattach';
-import { registerEditorLog } from './editorLog';
-import { registerBreakpointFilter } from './breakpointFilter';
+import {
+	attachToUnityEditor,
+	UnityAttachDebugConfigurationProvider,
+	UNITY_FOR_CURSOR_DEBUG_TYPE,
+} from './attach/attach';
+import { registerAutoReattach } from './attach/reattach';
+import { registerEditorLog } from './log/editorLog';
+import { registerBreakpointFilter } from './breakpoints/breakpointFilter';
 
 const RESHARPER_EXTENSION_ID = 'JetBrains.resharper-code';
 
