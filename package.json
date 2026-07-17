@@ -1,0 +1,73 @@
+{
+  "name": "unity-for-cursor",
+  "displayName": "Unity for Cursor",
+  "description": "Discover the local Unity Editor process and attach the JetBrains \"C# by ReSharper\" mono debugger to it for breakpoint debugging.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Other"
+  ],
+  "extensionDependencies": [
+    "JetBrains.resharper-code"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:cursorUnityAttach.attachToEditor"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cursorUnityAttach.attachToEditor",
+        "title": "Attach to Unity Editor",
+        "category": "Unity for Cursor"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "unity-for-cursor-attach",
+        "label": "Unity for Cursor",
+        "languages": ["csharp"],
+        "configurationAttributes": {
+          "attach": {
+            "properties": {}
+          }
+        },
+        "initialConfigurations": [
+          {
+            "name": "Unity for Cursor: Attach to Unity Editor",
+            "type": "unity-for-cursor-attach",
+            "request": "attach"
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "Unity for Cursor: Attach to Unity Editor",
+            "description": "自动发现本机运行的 Unity Editor 进程，并通过 ReSharper 的 mono 调试器 attach 上去",
+            "body": {
+              "name": "Unity for Cursor: Attach to Unity Editor",
+              "type": "unity-for-cursor-attach",
+              "request": "attach"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -w -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "typescript": "^5.4.0"
+  }
+}
