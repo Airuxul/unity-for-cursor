@@ -1,30 +1,15 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 import { resolveDebugCandidates, UnityDebugCandidate } from './unityProcess';
 
-// Temporary diagnostic log: dumps every candidate/port resolution + the exact config handed
-// to vscode.debug.startDebugging, so a failure can be root-caused from the resolved values
-// instead of guessing what the extension actually passed downstream.
-const DIAG_LOG_PATH = path.join(os.tmpdir(), 'unity-for-cursor-diag.log');
+export const ATTACH_SESSION_NAME = 'Unity for Cursor: Attach to Unity Editor';
 
-function diagLog(message: string): void {
-	const line = `[${new Date().toISOString()}] ${message}\n`;
-	try {
-		fs.appendFileSync(DIAG_LOG_PATH, line);
-	} catch {
-		// best-effort diagnostics only
-	}
-}
-
-type PortPickItem = vscode.QuickPickItem & { port: number };
+type PortPickItem = vscode.QuickPickItem & { port: number; pid: number };
 
 // NOTE: never verify a candidate port by actually connecting to it here — Unity's mono
 // debugger agent only services one connection per session, and spending it on a
 // pre-attach probe makes the real attach fail. Selection is OS-info-only (formula port
 // vs. listening ports), single-candidate cases are auto-resolved without prompting.
-async function resolvePort(candidates: UnityDebugCandidate[]): Promise<number | undefined> {
+async function resolvePort(candidates: UnityDebugCandidate[]): Promise<{ port: number; pid: number } | undefined> {
 	const anyListening = candidates.some((c) => c.listeningPorts.length > 0);
 	if (!anyListening) {
 		vscode.window.showErrorMessage(
@@ -34,7 +19,7 @@ async function resolvePort(candidates: UnityDebugCandidate[]): Promise<number | 
 	}
 
 	if (candidates.length === 1 && candidates[0].listeningPorts.includes(candidates[0].formulaPort)) {
-		return candidates[0].formulaPort;
+		return { port: candidates[0].formulaPort, pid: candidates[0].pid };
 	}
 
 	const items: PortPickItem[] = [];
@@ -44,6 +29,7 @@ async function resolvePort(candidates: UnityDebugCandidate[]): Promise<number | 
 				label: `$(check) PID ${c.pid} — 端口 ${c.formulaPort}（符合 Unity 约定端口公式）`,
 				description: c.projectPath,
 				port: c.formulaPort,
+				pid: c.pid,
 			});
 		}
 		for (const p of c.listeningPorts) {
@@ -54,6 +40,7 @@ async function resolvePort(candidates: UnityDebugCandidate[]): Promise<number | 
 				label: `PID ${c.pid} — 候选端口 ${p}`,
 				description: `${c.projectPath} · 约定端口: ${c.formulaPort}`,
 				port: p,
+				pid: c.pid,
 			});
 		}
 	}
@@ -63,7 +50,7 @@ async function resolvePort(candidates: UnityDebugCandidate[]): Promise<number | 
 		placeHolder: '优先选择标注"符合约定端口公式"的项',
 	});
 
-	return picked?.port;
+	return picked ? { port: picked.port, pid: picked.pid } : undefined;
 }
 
 // Our own debugger type (declared in package.json's contributes.debuggers), distinct from
@@ -75,7 +62,28 @@ async function resolvePort(candidates: UnityDebugCandidate[]): Promise<number | 
 // actual debug adapter.
 export const UNITY_FOR_CURSOR_DEBUG_TYPE = 'unity-for-cursor-attach';
 
-export async function buildAttachConfig(folder: vscode.WorkspaceFolder): Promise<vscode.DebugConfiguration | undefined> {
+export interface ResolvedAttach {
+	config: vscode.DebugConfiguration;
+	pid: number;
+}
+
+export interface LastAttachInfo {
+	folder: vscode.WorkspaceFolder;
+	pid: number;
+	port: number;
+}
+
+// Populated as a side effect of every successful buildAttachConfig() call, regardless of
+// whether it was reached via the command-palette path or the debug-picker path. reattach.ts
+// reads this right after our session starts so it knows which Unity process/port to watch
+// for a Domain Reload disconnect.
+let lastResolvedAttach: LastAttachInfo | undefined;
+
+export function getLastResolvedAttach(): LastAttachInfo | undefined {
+	return lastResolvedAttach;
+}
+
+export async function buildAttachConfig(folder: vscode.WorkspaceFolder): Promise<ResolvedAttach | undefined> {
 	let candidates: UnityDebugCandidate[];
 	try {
 		candidates = await vscode.window.withProgress(
@@ -87,28 +95,26 @@ export async function buildAttachConfig(folder: vscode.WorkspaceFolder): Promise
 		return undefined;
 	}
 
-	diagLog(`candidates: ${JSON.stringify(candidates)}`);
-
 	if (candidates.length === 0) {
 		vscode.window.showErrorMessage('Unity for Cursor: 未找到与当前工程匹配的 Unity Editor 进程，请先打开 Unity。');
 		return undefined;
 	}
 
-	const port = await resolvePort(candidates);
-	if (port === undefined) {
-		diagLog('resolvePort returned undefined, aborting');
+	const resolved = await resolvePort(candidates);
+	if (!resolved) {
 		return undefined;
 	}
 
-	const config = {
+	const config: vscode.DebugConfiguration = {
 		type: 'mono',
 		request: 'attach',
-		name: 'Unity for Cursor: Attach to Unity Editor',
+		name: ATTACH_SESSION_NAME,
 		address: '127.0.0.1',
-		port,
+		port: resolved.port,
 	};
-	diagLog(`resolved config handed to startDebugging: ${JSON.stringify(config)}`);
-	return config;
+
+	lastResolvedAttach = { folder, pid: resolved.pid, port: resolved.port };
+	return { config, pid: resolved.pid };
 }
 
 export async function attachToUnityEditor(): Promise<void> {
@@ -118,13 +124,12 @@ export async function attachToUnityEditor(): Promise<void> {
 		return;
 	}
 
-	const config = await buildAttachConfig(folder);
-	if (!config) {
+	const resolved = await buildAttachConfig(folder);
+	if (!resolved) {
 		return;
 	}
 
-	const started = await vscode.debug.startDebugging(folder, config);
-	diagLog(`startDebugging(command palette path) returned: ${started}`);
+	const started = await vscode.debug.startDebugging(folder, resolved.config);
 	if (!started) {
 		vscode.window.showErrorMessage(
 			'Unity for Cursor: attach 未能启动。请确认 "C# by ReSharper" 是当前唯一注册的 C# 调试扩展' +
@@ -139,7 +144,7 @@ export class UnityAttachDebugConfigurationProvider implements vscode.DebugConfig
 			{
 				type: UNITY_FOR_CURSOR_DEBUG_TYPE,
 				request: 'attach',
-				name: 'Unity for Cursor: Attach to Unity Editor',
+				name: ATTACH_SESSION_NAME,
 			},
 		];
 	}
@@ -148,10 +153,8 @@ export class UnityAttachDebugConfigurationProvider implements vscode.DebugConfig
 	// no marker property needed to distinguish it from the user's own launch.json entries.
 	async resolveDebugConfiguration(
 		folder: vscode.WorkspaceFolder | undefined,
-		config: vscode.DebugConfiguration
+		_config: vscode.DebugConfiguration
 	): Promise<vscode.DebugConfiguration | null | undefined> {
-		diagLog(`resolveDebugConfiguration called with: ${JSON.stringify(config)}`);
-
 		const target = folder ?? vscode.workspace.workspaceFolders?.[0];
 		if (!target) {
 			vscode.window.showErrorMessage('Unity for Cursor: 请先打开 Unity 工程所在的文件夹。');
@@ -159,6 +162,6 @@ export class UnityAttachDebugConfigurationProvider implements vscode.DebugConfig
 		}
 
 		const resolved = await buildAttachConfig(target);
-		return resolved ?? null;
+		return resolved?.config ?? null;
 	}
 }

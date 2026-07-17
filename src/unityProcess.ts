@@ -66,7 +66,7 @@ async function findUnityProcessesForProject(
 	return matches;
 }
 
-async function getListeningPorts(pid: number): Promise<number[]> {
+export async function getListeningPorts(pid: number): Promise<number[]> {
 	const raw = await runPowerShell(
 		`Get-NetTCPConnection -OwningProcess ${pid} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalPort`
 	);
@@ -76,6 +76,13 @@ async function getListeningPorts(pid: number): Promise<number[]> {
 		.filter((line) => line.length > 0)
 		.map((line) => parseInt(line, 10))
 		.filter((n) => !Number.isNaN(n));
+}
+
+export async function isProcessAlive(pid: number): Promise<boolean> {
+	const raw = await runPowerShell(
+		`Get-Process -Id ${pid} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id`
+	);
+	return raw.trim() === String(pid);
 }
 
 // IMPORTANT: do NOT probe candidate ports by actually connecting (e.g. a DWP-Handshake

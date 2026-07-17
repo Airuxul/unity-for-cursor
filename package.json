@@ -26,8 +26,29 @@
         "command": "cursorUnityAttach.attachToEditor",
         "title": "Attach to Unity Editor",
         "category": "Unity for Cursor"
+      },
+      {
+        "command": "unityForCursor.showEditorLog",
+        "title": "Show Unity Editor Log",
+        "category": "Unity for Cursor"
       }
     ],
+    "configuration": {
+      "title": "Unity for Cursor",
+      "properties": {
+        "unityForCursor.ignoreBreakpointsGlobs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/Library/**",
+            "**/Packages/**"
+          ],
+          "description": "匹配到这些 glob 的脚本文件中，新增的断点会被自动禁用（手动重新启用后不会被再次禁用）。"
+        }
+      }
+    },
     "debuggers": [
       {
         "type": "unity-for-cursor-attach",

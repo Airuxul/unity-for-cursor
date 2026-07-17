@@ -1,5 +1,8 @@
 import * as vscode from 'vscode';
 import { attachToUnityEditor, UnityAttachDebugConfigurationProvider, UNITY_FOR_CURSOR_DEBUG_TYPE } from './attach';
+import { registerAutoReattach } from './reattach';
+import { registerEditorLog } from './editorLog';
+import { registerBreakpointFilter } from './breakpointFilter';
 
 const RESHARPER_EXTENSION_ID = 'JetBrains.resharper-code';
 
@@ -34,6 +37,9 @@ export function activate(context: vscode.ExtensionContext): void {
 			new UnityAttachDebugConfigurationProvider()
 		)
 	);
+	registerAutoReattach(context);
+	registerEditorLog(context);
+	registerBreakpointFilter(context);
 	void ensureResharperInstalled();
 }
 
