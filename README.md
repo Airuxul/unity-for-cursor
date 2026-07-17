@@ -15,9 +15,8 @@ streaming, breakpoint filtering, auto re-attach — is this extension's own code
 
 Cursor can't use Microsoft's **C# Dev Kit** — its license restricts it to Microsoft's own VS Code
 and Visual Studio, so the official "C# Dev Kit + Unity" debugging path simply isn't available
-here. This extension's goal is to bring Unity development in Cursor as close as possible to what
-JetBrains Rider already provides natively, by attaching JetBrains **"C# by ReSharper"**'s debugger
-instead.
+here.
+**FUCK Microsoft**
 
 ## Features
 

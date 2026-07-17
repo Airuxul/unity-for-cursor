@@ -11,9 +11,9 @@ Unity Editor 进程，并提供一系列旨在拉近与 JetBrains Rider 内置 U
 
 ## 为什么会有这个插件
 
-Cursor 无法使用微软的 **C# Dev Kit**——其授权协议限制只能在微软自家的 VS Code 和 Visual Studio 中使用，因此官方的
-"C# Dev Kit + Unity" 调试方案在 Cursor 里根本不可用。本插件的目标，是让 Cursor 里开发 Unity 的体验尽量接近 JetBrains
-Rider 原生自带的水平，做法是改用 JetBrains **"C# by ReSharper"** 的调试器来 attach。
+Cursor 无法使用微软的 **C# Dev Kit** ——其授权协议限制只能在微软自家的 VS Code 和 Visual Studio 中使用，因此官方的
+"C# Dev Kit + Unity" 调试方案在 Cursor 里根本不可用。
+**FUCK Microsoft**
 
 ## 功能特性
 
