@@ -7,6 +7,10 @@
   "author": "Airuxul",
   "private": true,
   "icon": "resources/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Airuxul/unity-for-cursor.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },

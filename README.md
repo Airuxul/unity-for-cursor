@@ -1,6 +1,6 @@
 # Unity for Cursor
 
-中文文档见同目录下的 `README.zh-CN.md`。
+[中文](README.zh-CN.md)
 
 Attach JetBrains **"C# by ReSharper"**'s debugger to a running Unity Editor process, directly
 from Cursor (or any VS Code–compatible editor) — plus a set of quality-of-life features aimed at
