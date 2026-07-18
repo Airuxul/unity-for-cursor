@@ -143,36 +143,43 @@ export function registerEditorLog(context: vscode.ExtensionContext): void {
 	// block in two, so we hold it back until the next pump instead of misclassifying it.
 	let carry = '';
 
+	// LogOutputChannel colors and timestamps only the first line passed to error()/warn()/info() —
+	// the rest of a multi-line block (e.g. a stack trace) renders as plain text if passed in the
+	// same call. So we log just the header line through the leveled call for the color/tag, then
+	// append the remaining lines as plain continuation text, followed by a blank separator line
+	// so consecutive entries don't visually run together.
+	function logBlock(block: string): void {
+		if (!block.trim()) {
+			return;
+		}
+		const level = classifyBlock(block);
+		const lines = block.split(/\r?\n/);
+		const header = lines[0];
+		const rest = lines.slice(1).join('\n');
+		if (level === 'error') {
+			channel.error(header);
+		} else if (level === 'warning') {
+			channel.warn(header);
+		} else {
+			channel.info(header);
+		}
+		if (rest.trim()) {
+			channel.appendLine(rest);
+		}
+		channel.appendLine('');
+	}
+
 	function emit(text: string): void {
 		const combined = carry + text;
 		const blocks = combined.split(/\r?\n\r?\n+/);
 		carry = blocks.pop() ?? '';
 		for (const block of blocks) {
-			if (!block.trim()) {
-				continue;
-			}
-			const level = classifyBlock(block);
-			if (level === 'error') {
-				channel.error(block);
-			} else if (level === 'warning') {
-				channel.warn(block);
-			} else {
-				channel.info(block);
-			}
+			logBlock(block);
 		}
 	}
 
 	function flushCarry(): void {
-		if (carry.trim()) {
-			const level = classifyBlock(carry);
-			if (level === 'error') {
-				channel.error(carry);
-			} else if (level === 'warning') {
-				channel.warn(carry);
-			} else {
-				channel.info(carry);
-			}
-		}
+		logBlock(carry);
 		carry = '';
 	}
 

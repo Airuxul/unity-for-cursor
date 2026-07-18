@@ -10,6 +10,12 @@
   re-scanning the whole document on every update.
 - Added click-to-jump support for compiler diagnostics (`Foo.cs(10,5): error CS0246: ...`), in
   addition to the existing runtime stack-frame format (`(at Foo.cs:42)`).
+- Fixed log entries not appearing at all — the block-splitting regex only matched bare `\n\n`, but
+  `Editor.log` uses CRLF, so blank-line separators never matched and everything stayed buffered.
+- Fixed entries visually running together with no separation, and only the first line of a
+  multi-line entry (e.g. a stack trace) being colored — `LogOutputChannel` only applies level
+  coloring to the single line passed to `error()`/`warn()`/`info()`, so each block's remaining
+  lines are now appended as plain continuation text, followed by a blank line between entries.
 
 ## 0.1.0
 
