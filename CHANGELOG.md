@@ -4,18 +4,21 @@
 
 - Replaced `fs.watch` with `chokidar` for `Editor.log` tailing — more reliable on Windows when the
   log file is truncated/replaced by a new Editor session.
-- `Editor.log` output is now a `LogOutputChannel` with entries classified as error/warning/info, so
-  the panel gets native coloring and a built-in log-level filter instead of one flat text stream.
 - `DocumentLinkProvider` for the log now scans incrementally (only newly-appended text) instead of
   re-scanning the whole document on every update.
 - Added click-to-jump support for compiler diagnostics (`Foo.cs(10,5): error CS0246: ...`), in
   addition to the existing runtime stack-frame format (`(at Foo.cs:42)`).
 - Fixed log entries not appearing at all — the block-splitting regex only matched bare `\n\n`, but
   `Editor.log` uses CRLF, so blank-line separators never matched and everything stayed buffered.
-- Fixed entries visually running together with no separation, and only the first line of a
-  multi-line entry (e.g. a stack trace) being colored — `LogOutputChannel` only applies level
-  coloring to the single line passed to `error()`/`warn()`/`info()`, so each block's remaining
-  lines are now appended as plain continuation text, followed by a blank line between entries.
+- Reworked `Editor.log` rendering: each log entry (message + stack trace) now prints as a single
+  plain-text block prefixed with `⛔`/`⚠` for error/warning, followed by a blank separator line, and
+  a custom TextMate grammar colors the *entire* block (not just the first line) red/yellow by
+  severity. This replaces an earlier `LogOutputChannel`-based attempt, which turned out to be
+  fundamentally unworkable: `LogOutputChannel` only colors the single string passed to
+  `error()`/`warn()`/`info()`, and its `appendLine()` silently auto-tags every call as its own
+  timestamped `[info]` line — there was no way to append plain continuation text or a blank
+  separator without it becoming spammy fake log entries. The tradeoff is losing the panel's
+  built-in Trace/Debug/Info/Warning/Error level-filter dropdown.
 
 ## 0.1.0
 

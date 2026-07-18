@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import chokidar, { FSWatcher } from 'chokidar';
 
-const LOG_LANGUAGE_ID = 'log';
+const LOG_LANGUAGE_ID = 'unity-editor-log';
 // Unity runtime stack-trace frames look like: "MyScript.Update () (at Assets/Scripts/MyScript.cs:42)".
 const STACK_FRAME_PATTERN = /\(at ([^()\r\n]+):(\d+)\)/g;
 // Unity compiler diagnostics look like: "Assets/Scripts/MyScript.cs(42,10): error CS0246: ...".
@@ -109,7 +109,7 @@ class UnityLogLinkProvider implements vscode.DocumentLinkProvider {
 }
 
 export function registerEditorLog(context: vscode.ExtensionContext): void {
-	const channel = vscode.window.createOutputChannel('Unity Editor Log', { log: true });
+	const channel = vscode.window.createOutputChannel('Unity Editor Log', LOG_LANGUAGE_ID);
 	context.subscriptions.push(channel);
 
 	context.subscriptions.push(
@@ -143,29 +143,16 @@ export function registerEditorLog(context: vscode.ExtensionContext): void {
 	// block in two, so we hold it back until the next pump instead of misclassifying it.
 	let carry = '';
 
-	// LogOutputChannel colors and timestamps only the first line passed to error()/warn()/info() —
-	// the rest of a multi-line block (e.g. a stack trace) renders as plain text if passed in the
-	// same call. So we log just the header line through the leveled call for the color/tag, then
-	// append the remaining lines as plain continuation text, followed by a blank separator line
-	// so consecutive entries don't visually run together.
+	// Each block is written as one plain appendLine() call with its internal newlines intact, so the
+	// TextMate grammar (begin: "^⛔ "/"^⚠ ", end: "^$") can match the whole multi-line block — including
+	// a stack trace — as a single colored region instead of only coloring a single line.
 	function logBlock(block: string): void {
 		if (!block.trim()) {
 			return;
 		}
 		const level = classifyBlock(block);
-		const lines = block.split(/\r?\n/);
-		const header = lines[0];
-		const rest = lines.slice(1).join('\n');
-		if (level === 'error') {
-			channel.error(header);
-		} else if (level === 'warning') {
-			channel.warn(header);
-		} else {
-			channel.info(header);
-		}
-		if (rest.trim()) {
-			channel.appendLine(rest);
-		}
+		const prefix = level === 'error' ? '⛔ ' : level === 'warning' ? '⚠ ' : '';
+		channel.appendLine(prefix + block);
 		channel.appendLine('');
 	}
 

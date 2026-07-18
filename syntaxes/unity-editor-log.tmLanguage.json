@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Unity Editor Log",
+  "scopeName": "source.unity-editor-log",
+  "patterns": [
+    { "include": "#error-block" },
+    { "include": "#warning-block" }
+  ],
+  "repository": {
+    "error-block": {
+      "begin": "^(⛔ )",
+      "end": "^$",
+      "name": "markup.deleted.unity-log"
+    },
+    "warning-block": {
+      "begin": "^(⚠ )",
+      "end": "^$",
+      "name": "markup.changed.unity-log"
+    }
+  }
+}
