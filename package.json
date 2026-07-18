@@ -50,9 +50,27 @@
             "**/Library/**",
             "**/Packages/**"
           ],
-          "description": "匹配到这些 glob 的脚本文件中，新增的断点会被自动禁用（手动重新启用后不会被再次禁用）。"
+          "description": "匹配到这些 glob 的脚本文件中，新增的断点会被自动禁用（手动重新启用后不会被再次禁用）。仅支持 *、**、? 和 {a,b} 大括号展开，不支持 [abc] 字符类或 !取反。"
         }
       }
+    },
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "unityForCursorLog",
+          "title": "Unity Editor Log",
+          "icon": "resources/log-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "unityForCursorLog": [
+        {
+          "id": "unityForCursor.editorLogView",
+          "name": "Unity Editor Log",
+          "type": "webview"
+        }
+      ]
     },
     "debuggers": [
       {

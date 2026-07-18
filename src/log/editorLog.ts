@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { EditorLogTailer } from './logTailer';
-import { LogPanel } from './logPanel';
+import { EDITOR_LOG_VIEW_ID, LogViewProvider } from './logView';
 
 function resolveScriptUri(file: string): vscode.Uri | undefined {
 	if (path.isAbsolute(file)) {
@@ -18,8 +18,16 @@ export function registerEditorLog(context: vscode.ExtensionContext): void {
 	const tailer = new EditorLogTailer();
 	context.subscriptions.push(tailer);
 
+	const provider = new LogViewProvider(context, tailer);
+	context.subscriptions.push(provider);
 	context.subscriptions.push(
-		vscode.commands.registerCommand('unityForCursor.showEditorLog', () => LogPanel.createOrShow(context, tailer))
+		vscode.window.registerWebviewViewProvider(EDITOR_LOG_VIEW_ID, provider, {
+			webviewOptions: { retainContextWhenHidden: true },
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('unityForCursor.showEditorLog', () => provider.reveal())
 	);
 
 	context.subscriptions.push(

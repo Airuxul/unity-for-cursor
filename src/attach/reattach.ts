@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ATTACH_SESSION_NAME, LastAttachInfo, buildAttachConfig, getLastResolvedAttach } from './attach';
-import { getListeningPorts, isProcessAlive } from './unityProcess';
+import { getPortCreationTime, isProcessAlive } from './unityProcess';
 
 const POLL_INTERVAL_MS = 1000;
 const POLL_TIMEOUT_MS = 25000;
@@ -12,25 +12,25 @@ function sleep(ms: number): Promise<void> {
 // Distinguishing "Unity did a Domain Reload" from "the user clicked Stop/Disconnect" purely
 // from session-termination is unreliable: attach-mode disconnects don't kill Unity, so the
 // process stays alive in both cases. What's reliable is the mono debugger agent's listening
-// socket itself — a Domain Reload restarts Unity's mono runtime, which tears down and
-// re-opens that socket, while a plain client disconnect leaves it exactly as-is (still
-// listed as Listen, just no longer accepting a fresh handshake — see resolvePort's notes on
-// the one-shot connection). So we only treat this as a reload if we actually observe the
-// known port disappear and then come back; otherwise we give up silently.
+// socket itself — a Domain Reload tears down and re-opens it, giving it a new CreationTime even
+// if the port number is reused, while a plain client disconnect leaves the original socket
+// exactly as-is. We compare CreationTime across polls rather than just checking "is it listening
+// again after being gone" — a fast/optimized Domain Reload (sub-second) can tear down and
+// recreate the socket entirely between two 1-second polls, so two consecutive "yes, listening"
+// observations could still be straddling a reload the old drop-then-recover check would miss
+// entirely.
 async function waitForReload(pid: number, knownPort: number): Promise<boolean> {
 	const deadline = Date.now() + POLL_TIMEOUT_MS;
-	let sawDrop = false;
+	const baseline = await getPortCreationTime(pid, knownPort);
 	while (Date.now() < deadline) {
+		await sleep(POLL_INTERVAL_MS);
 		if (!(await isProcessAlive(pid))) {
 			return false;
 		}
-		const stillListening = (await getListeningPorts(pid)).includes(knownPort);
-		if (!sawDrop) {
-			sawDrop = !stillListening;
-		} else if (stillListening) {
+		const current = await getPortCreationTime(pid, knownPort);
+		if (current !== undefined && current !== baseline) {
 			return true;
 		}
-		await sleep(POLL_INTERVAL_MS);
 	}
 	return false;
 }
@@ -57,6 +57,14 @@ export function registerAutoReattach(context: vscode.ExtensionContext): void {
 
 			const reloaded = await waitForReload(pid, port);
 			if (!reloaded) {
+				// Only reachable via the 25s timeout (isProcessAlive-false returns early above
+				// without going through here) — large projects can easily take longer than that
+				// to finish a Domain Reload, and the user has no other signal that auto-reattach
+				// was even attempted, let alone that it gave up.
+				vscode.window.setStatusBarMessage(
+					'$(warning) Unity for Cursor: 未在 25 秒内检测到 Domain Reload 完成，自动重连已放弃，请手动 attach',
+					6000
+				);
 				return;
 			}
 
