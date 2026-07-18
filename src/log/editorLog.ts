@@ -2,10 +2,16 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import chokidar, { FSWatcher } from 'chokidar';
 
-const LOG_LANGUAGE_ID = 'unity-editor-log';
-// Unity stack-trace frames look like: "MyScript.Update () (at Assets/Scripts/MyScript.cs:42)".
+const LOG_LANGUAGE_ID = 'log';
+// Unity runtime stack-trace frames look like: "MyScript.Update () (at Assets/Scripts/MyScript.cs:42)".
 const STACK_FRAME_PATTERN = /\(at ([^()\r\n]+):(\d+)\)/g;
+// Unity compiler diagnostics look like: "Assets/Scripts/MyScript.cs(42,10): error CS0246: ...".
+const COMPILER_DIAGNOSTIC_PATTERN = /([^\s():]+\.cs)\((\d+),(\d+)\):\s*(?:error|warning)\s+CS\d+/g;
+
+const ERROR_BLOCK_PATTERN = /error CS\d+|UnityEngine\.Debug:LogError|UnityEngine\.Debug:LogException|\bException\b.*?:/;
+const WARNING_BLOCK_PATTERN = /warning CS\d+|UnityEngine\.Debug:LogWarning/;
 
 function getEditorLogPath(): string {
 	return path.join(os.homedir(), 'AppData', 'Local', 'Unity', 'Editor', 'Editor.log');
@@ -22,30 +28,88 @@ function resolveScriptUri(file: string): vscode.Uri | undefined {
 	return vscode.Uri.file(path.join(folder.uri.fsPath, file));
 }
 
+function classifyBlock(block: string): 'error' | 'warning' | 'info' {
+	if (ERROR_BLOCK_PATTERN.test(block)) {
+		return 'error';
+	}
+	if (WARNING_BLOCK_PATTERN.test(block)) {
+		return 'warning';
+	}
+	return 'info';
+}
+
+interface LinkCache {
+	scannedLength: number;
+	links: vscode.DocumentLink[];
+}
+
+const linkCaches = new WeakMap<vscode.TextDocument, LinkCache>();
+
+interface RawLink {
+	start: number;
+	end: number;
+	target: vscode.Uri;
+}
+
+function scanLinks(text: string, offset: number): RawLink[] {
+	const links: RawLink[] = [];
+
+	STACK_FRAME_PATTERN.lastIndex = 0;
+	let match: RegExpExecArray | null;
+	while ((match = STACK_FRAME_PATTERN.exec(text))) {
+		const [full, file, lineStr] = match;
+		const args = encodeURIComponent(JSON.stringify([file, parseInt(lineStr, 10)]));
+		links.push({
+			start: offset + match.index,
+			end: offset + match.index + full.length,
+			target: vscode.Uri.parse(`command:unityForCursor.openLogLocation?${args}`),
+		});
+	}
+
+	COMPILER_DIAGNOSTIC_PATTERN.lastIndex = 0;
+	while ((match = COMPILER_DIAGNOSTIC_PATTERN.exec(text))) {
+		const [full, file, lineStr] = match;
+		const args = encodeURIComponent(JSON.stringify([file, parseInt(lineStr, 10)]));
+		links.push({
+			start: offset + match.index,
+			end: offset + match.index + full.length,
+			target: vscode.Uri.parse(`command:unityForCursor.openLogLocation?${args}`),
+		});
+	}
+
+	return links;
+}
+
 class UnityLogLinkProvider implements vscode.DocumentLinkProvider {
 	provideDocumentLinks(document: vscode.TextDocument): vscode.DocumentLink[] {
-		const text = document.getText();
-		const links: vscode.DocumentLink[] = [];
-		STACK_FRAME_PATTERN.lastIndex = 0;
-		let match: RegExpExecArray | null;
-		while ((match = STACK_FRAME_PATTERN.exec(text))) {
-			const [full, file, lineStr] = match;
-			const start = document.positionAt(match.index);
-			const end = document.positionAt(match.index + full.length);
-			const args = encodeURIComponent(JSON.stringify([file, parseInt(lineStr, 10)]));
-			links.push(
-				new vscode.DocumentLink(
-					new vscode.Range(start, end),
-					vscode.Uri.parse(`command:unityForCursor.openLogLocation?${args}`)
-				)
-			);
+		const currentLength = document.getText().length;
+		let cache = linkCaches.get(document);
+
+		if (!cache || currentLength < cache.scannedLength) {
+			// Document was cleared or replaced (new Editor session) — rescan from scratch.
+			cache = { scannedLength: 0, links: [] };
 		}
-		return links;
+
+		if (currentLength > cache.scannedLength) {
+			const newText = document.getText().slice(cache.scannedLength);
+			const rawLinks = scanLinks(newText, cache.scannedLength);
+			const resolvedLinks = rawLinks.map(
+				(raw) =>
+					new vscode.DocumentLink(
+						new vscode.Range(document.positionAt(raw.start), document.positionAt(raw.end)),
+						raw.target
+					)
+			);
+			cache = { scannedLength: currentLength, links: [...cache.links, ...resolvedLinks] };
+			linkCaches.set(document, cache);
+		}
+
+		return cache.links;
 	}
 }
 
 export function registerEditorLog(context: vscode.ExtensionContext): void {
-	const channel = vscode.window.createOutputChannel('Unity Editor Log', LOG_LANGUAGE_ID);
+	const channel = vscode.window.createOutputChannel('Unity Editor Log', { log: true });
 	context.subscriptions.push(channel);
 
 	context.subscriptions.push(
@@ -74,8 +138,43 @@ export function registerEditorLog(context: vscode.ExtensionContext): void {
 	);
 
 	let offset = 0;
-	let watcher: fs.FSWatcher | undefined;
 	let pending = false;
+	// Unity's log blocks are separated by blank lines; a chunk boundary can split the last
+	// block in two, so we hold it back until the next pump instead of misclassifying it.
+	let carry = '';
+
+	function emit(text: string): void {
+		const combined = carry + text;
+		const blocks = combined.split(/\n\n+/);
+		carry = blocks.pop() ?? '';
+		for (const block of blocks) {
+			if (!block.trim()) {
+				continue;
+			}
+			const level = classifyBlock(block);
+			if (level === 'error') {
+				channel.error(block);
+			} else if (level === 'warning') {
+				channel.warn(block);
+			} else {
+				channel.info(block);
+			}
+		}
+	}
+
+	function flushCarry(): void {
+		if (carry.trim()) {
+			const level = classifyBlock(carry);
+			if (level === 'error') {
+				channel.error(carry);
+			} else if (level === 'warning') {
+				channel.warn(carry);
+			} else {
+				channel.info(carry);
+			}
+		}
+		carry = '';
+	}
 
 	function pump(): void {
 		if (pending) {
@@ -90,6 +189,7 @@ export function registerEditorLog(context: vscode.ExtensionContext): void {
 			}
 			if (stats.size < offset) {
 				// Unity truncated/replaced the log (new Editor session started).
+				flushCarry();
 				offset = 0;
 			}
 			if (stats.size === offset) {
@@ -103,7 +203,7 @@ export function registerEditorLog(context: vscode.ExtensionContext): void {
 			stream.on('data', (data) => (chunk += data));
 			stream.on('close', () => {
 				if (chunk) {
-					channel.append(chunk);
+					emit(chunk);
 				}
 				pending = false;
 			});
@@ -113,16 +213,21 @@ export function registerEditorLog(context: vscode.ExtensionContext): void {
 		});
 	}
 
+	let watcher: FSWatcher | undefined;
 	try {
-		watcher = fs.watch(path.dirname(getEditorLogPath()), (_event, filename) => {
-			if (!filename || filename === path.basename(getEditorLogPath())) {
-				pump();
-			}
+		watcher = chokidar.watch(getEditorLogPath(), {
+			awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
+			ignoreInitial: true,
 		});
+		watcher.on('add', pump).on('change', pump).on('unlink', () => (offset = 0));
 	} catch {
 		// Unity has never run on this machine — the log directory doesn't exist yet.
 	}
 	pump();
 
-	context.subscriptions.push({ dispose: () => watcher?.close() });
+	context.subscriptions.push({
+		dispose: () => {
+			void watcher?.close();
+		},
+	});
 }

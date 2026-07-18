@@ -58,7 +58,9 @@
       {
         "type": "unity-for-cursor-attach",
         "label": "Unity for Cursor",
-        "languages": ["csharp"],
+        "languages": [
+          "csharp"
+        ],
         "configurationAttributes": {
           "attach": {
             "properties": {}
@@ -95,5 +97,8 @@
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^2.24.0",
     "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3"
   }
 }
