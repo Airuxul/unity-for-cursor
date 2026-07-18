@@ -2,7 +2,7 @@
   "name": "unity-for-cursor",
   "displayName": "Unity for Cursor",
   "description": "Discover the local Unity Editor process and attach the JetBrains \"C# by ReSharper\" mono debugger to it for breakpoint debugging.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "local",
   "author": "Airuxul",
   "private": true,
@@ -36,8 +36,29 @@
         "command": "unityForCursor.showEditorLog",
         "title": "Show Unity Editor Log",
         "category": "Unity for Cursor"
+      },
+      {
+        "command": "unityForCursor.findSceneUsages",
+        "title": "Find Usages in Scenes/Prefabs",
+        "category": "Unity for Cursor"
       }
     ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "unityForCursor.findSceneUsages",
+          "when": "resourceLangId == csharp",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "unityForCursor.findSceneUsages",
+          "when": "resourceExtname == .cs",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "Unity for Cursor",
       "properties": {
@@ -51,6 +72,21 @@
             "**/Packages/**"
           ],
           "description": "匹配到这些 glob 的脚本文件中，新增的断点会被自动禁用（手动重新启用后不会被再次禁用）。仅支持 *、**、? 和 {a,b} 大括号展开，不支持 [abc] 字符类或 !取反。"
+        },
+        "unityForCursor.enableCompileStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "在状态栏显示 Unity 正在编译/Domain Reload 的指示。"
+        },
+        "unityForCursor.enableLifecycleHover": {
+          "type": "boolean",
+          "default": true,
+          "description": "悬浮在 Unity 生命周期方法（Awake/Update 等）上时显示说明。"
+        },
+        "unityForCursor.enableSceneUsagesHover": {
+          "type": "boolean",
+          "default": true,
+          "description": "悬浮在脚本的类名（声明行）上时，显示引用该脚本的场景/预制体列表并可点击跳转。"
         }
       }
     },
