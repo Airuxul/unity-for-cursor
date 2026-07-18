@@ -7,6 +7,9 @@ import {
 import { registerAutoReattach } from './attach/reattach';
 import { registerEditorLog } from './log/editorLog';
 import { registerBreakpointFilter } from './breakpoints/breakpointFilter';
+import { registerCompileStatusBar } from './log/compileStatusBar';
+import { registerSceneUsages, registerSceneUsagesHover } from './usages/sceneUsages';
+import { registerLifecycleHover } from './hover/lifecycleHover';
 
 const RESHARPER_EXTENSION_ID = 'JetBrains.resharper-code';
 
@@ -42,8 +45,12 @@ export function activate(context: vscode.ExtensionContext): void {
 		)
 	);
 	registerAutoReattach(context);
-	registerEditorLog(context);
+	const tailer = registerEditorLog(context);
 	registerBreakpointFilter(context);
+	registerCompileStatusBar(context, tailer);
+	registerSceneUsages(context);
+	registerSceneUsagesHover(context);
+	registerLifecycleHover(context);
 	void ensureResharperInstalled();
 }
 

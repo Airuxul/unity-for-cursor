@@ -1,20 +1,9 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { EditorLogTailer } from './logTailer';
 import { EDITOR_LOG_VIEW_ID, LogViewProvider } from './logView';
+import { resolveScriptUri } from './scriptPath';
 
-function resolveScriptUri(file: string): vscode.Uri | undefined {
-	if (path.isAbsolute(file)) {
-		return vscode.Uri.file(file);
-	}
-	const folder = vscode.workspace.workspaceFolders?.[0];
-	if (!folder) {
-		return undefined;
-	}
-	return vscode.Uri.file(path.join(folder.uri.fsPath, file));
-}
-
-export function registerEditorLog(context: vscode.ExtensionContext): void {
+export function registerEditorLog(context: vscode.ExtensionContext): EditorLogTailer {
 	const tailer = new EditorLogTailer();
 	context.subscriptions.push(tailer);
 
@@ -46,4 +35,6 @@ export function registerEditorLog(context: vscode.ExtensionContext): void {
 			}
 		})
 	);
+
+	return tailer;
 }
