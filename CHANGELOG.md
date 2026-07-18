@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - Replaced `fs.watch` with `chokidar` for `Editor.log` tailing — more reliable on Windows when the
   log file is truncated/replaced by a new Editor session.
@@ -120,6 +120,44 @@
   via `Promise.all` instead of sequentially in a loop. Each lookup spawns its own `powershell.exe`
   process, so awaiting them one at a time paid that startup cost serially once per matched Unity
   instance when multiple projects/instances are running.
+- Added three IDE-side features aimed at closing gaps with Rider's built-in Unity support, all built
+  on the existing `EditorLogTailer` rather than opening new file watchers:
+  - A status bar item shows a spinner while Unity is compiling/reloading the domain. Compile
+    start/end are detected from `Editor.log` marker strings (`Begin MonoManager ReloadAssembly` /
+    `Domain Reload Profiling:` / `Loaded All Assemblies`) empirically observed on this machine —
+    not a documented Unity API, so a 120-second safety timeout force-clears the indicator in case a
+    different Editor version's log phrasing doesn't match.
+  - `Unity for Cursor: Find Usages in Scenes/Prefabs` (also available via right-click on a `.cs`
+    file) finds which `.unity`/`.prefab` files reference the selected script, matched via the
+    script's `.meta` GUID. Uses plain substring/regex matching rather than a real YAML parser,
+    since Unity's GUID references are simple single-line mappings and Unity's YAML dialect isn't
+    fully standard-compliant anyway. Note: this only finds scripts serialized directly onto a
+    GameObject in the prefab/scene — a script attached at runtime via `AddComponent<T>()` (a
+    pattern this codebase's `ViewController<T>` uses) has no GUID reference baked into the asset
+    and won't be found this way. Also fixed the scan silently returning zero matches on projects
+    (like this one) whose `.vscode/settings.json` sets `files.exclude` on `**/*.prefab`/`**/*.unity`
+    to declutter the Explorer — `vscode.workspace.findFiles` applies `files.exclude` on top of any
+    string `exclude` argument, so passing one there was quietly hiding every candidate before the
+    scan started. The exclude argument is now `null` (bypasses `files.exclude` entirely), with the
+    Library/Temp exclusion done as a manual path filter instead.
+  - Find Usages is also now surfaced directly as a hover: hovering a script's class declaration
+    (only fires when the class name matches the file name, per Unity's own naming requirement for
+    a script's main class) shows a clickable "Find Usages in Scenes/Prefabs" button that runs the
+    exact same command (progress notification, QuickPick, jump-to-location) — the hover itself
+    doesn't scan or list matches, it just offers one-click access to the existing command. The
+    per-GUID result cache (invalidated on any `.unity`/`.prefab` file change) is still shared with
+    the command's own repeat invocations, since hover fires on every mouse-rest but the underlying
+    scan is only ever triggered by an actual click. Fixed the hover's button doing nothing on
+    click: a markdown `command:` URI round-trips its argument through JSON, so the command
+    received a plain string instead of the `vscode.Uri` the right-click menu passes, and
+    `.fsPath` on a string threw silently. The command now accepts either.
+  - Hovering a Unity lifecycle method (`Awake`, `Update`, `OnTriggerEnter2D`, etc.) inside a class
+    that directly inherits a known Unity base type (`MonoBehaviour`/`Editor`/`EditorWindow`/
+    `ScriptableObject`) shows a short description of when Unity calls it. This is a syntactic
+    heuristic, not real type analysis — it won't recognize a custom intermediate base class.
+  - All toggleable features are gated behind new `unityForCursor.enableCompileStatusBar` /
+    `enableLifecycleHover` / `enableSceneUsagesHover` settings (default `true`) so any can be turned
+    off individually (e.g. if a hover visually conflicts with ReSharper's own hover).
 
 ## 0.1.0
 
