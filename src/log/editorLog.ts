@@ -1,21 +1,7 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
-import chokidar, { FSWatcher } from 'chokidar';
-
-const LOG_LANGUAGE_ID = 'unity-editor-log';
-// Unity runtime stack-trace frames look like: "MyScript.Update () (at Assets/Scripts/MyScript.cs:42)".
-const STACK_FRAME_PATTERN = /\(at ([^()\r\n]+):(\d+)\)/g;
-// Unity compiler diagnostics look like: "Assets/Scripts/MyScript.cs(42,10): error CS0246: ...".
-const COMPILER_DIAGNOSTIC_PATTERN = /([^\s():]+\.cs)\((\d+),(\d+)\):\s*(?:error|warning)\s+CS\d+/g;
-
-const ERROR_BLOCK_PATTERN = /error CS\d+|UnityEngine\.Debug:LogError|UnityEngine\.Debug:LogException|\bException\b.*?:/;
-const WARNING_BLOCK_PATTERN = /warning CS\d+|UnityEngine\.Debug:LogWarning/;
-
-function getEditorLogPath(): string {
-	return path.join(os.homedir(), 'AppData', 'Local', 'Unity', 'Editor', 'Editor.log');
-}
+import { EditorLogTailer } from './logTailer';
+import { LogPanel } from './logPanel';
 
 function resolveScriptUri(file: string): vscode.Uri | undefined {
 	if (path.isAbsolute(file)) {
@@ -28,96 +14,12 @@ function resolveScriptUri(file: string): vscode.Uri | undefined {
 	return vscode.Uri.file(path.join(folder.uri.fsPath, file));
 }
 
-function classifyBlock(block: string): 'error' | 'warning' | 'info' {
-	if (ERROR_BLOCK_PATTERN.test(block)) {
-		return 'error';
-	}
-	if (WARNING_BLOCK_PATTERN.test(block)) {
-		return 'warning';
-	}
-	return 'info';
-}
-
-interface LinkCache {
-	scannedLength: number;
-	links: vscode.DocumentLink[];
-}
-
-const linkCaches = new WeakMap<vscode.TextDocument, LinkCache>();
-
-interface RawLink {
-	start: number;
-	end: number;
-	target: vscode.Uri;
-}
-
-function scanLinks(text: string, offset: number): RawLink[] {
-	const links: RawLink[] = [];
-
-	STACK_FRAME_PATTERN.lastIndex = 0;
-	let match: RegExpExecArray | null;
-	while ((match = STACK_FRAME_PATTERN.exec(text))) {
-		const [full, file, lineStr] = match;
-		const args = encodeURIComponent(JSON.stringify([file, parseInt(lineStr, 10)]));
-		links.push({
-			start: offset + match.index,
-			end: offset + match.index + full.length,
-			target: vscode.Uri.parse(`command:unityForCursor.openLogLocation?${args}`),
-		});
-	}
-
-	COMPILER_DIAGNOSTIC_PATTERN.lastIndex = 0;
-	while ((match = COMPILER_DIAGNOSTIC_PATTERN.exec(text))) {
-		const [full, file, lineStr] = match;
-		const args = encodeURIComponent(JSON.stringify([file, parseInt(lineStr, 10)]));
-		links.push({
-			start: offset + match.index,
-			end: offset + match.index + full.length,
-			target: vscode.Uri.parse(`command:unityForCursor.openLogLocation?${args}`),
-		});
-	}
-
-	return links;
-}
-
-class UnityLogLinkProvider implements vscode.DocumentLinkProvider {
-	provideDocumentLinks(document: vscode.TextDocument): vscode.DocumentLink[] {
-		const currentLength = document.getText().length;
-		let cache = linkCaches.get(document);
-
-		if (!cache || currentLength < cache.scannedLength) {
-			// Document was cleared or replaced (new Editor session) — rescan from scratch.
-			cache = { scannedLength: 0, links: [] };
-		}
-
-		if (currentLength > cache.scannedLength) {
-			const newText = document.getText().slice(cache.scannedLength);
-			const rawLinks = scanLinks(newText, cache.scannedLength);
-			const resolvedLinks = rawLinks.map(
-				(raw) =>
-					new vscode.DocumentLink(
-						new vscode.Range(document.positionAt(raw.start), document.positionAt(raw.end)),
-						raw.target
-					)
-			);
-			cache = { scannedLength: currentLength, links: [...cache.links, ...resolvedLinks] };
-			linkCaches.set(document, cache);
-		}
-
-		return cache.links;
-	}
-}
-
 export function registerEditorLog(context: vscode.ExtensionContext): void {
-	const channel = vscode.window.createOutputChannel('Unity Editor Log', LOG_LANGUAGE_ID);
-	context.subscriptions.push(channel);
+	const tailer = new EditorLogTailer();
+	context.subscriptions.push(tailer);
 
 	context.subscriptions.push(
-		vscode.languages.registerDocumentLinkProvider({ language: LOG_LANGUAGE_ID }, new UnityLogLinkProvider())
-	);
-
-	context.subscriptions.push(
-		vscode.commands.registerCommand('unityForCursor.showEditorLog', () => channel.show(true))
+		vscode.commands.registerCommand('unityForCursor.showEditorLog', () => LogPanel.createOrShow(context, tailer))
 	);
 
 	context.subscriptions.push(
@@ -136,92 +38,4 @@ export function registerEditorLog(context: vscode.ExtensionContext): void {
 			}
 		})
 	);
-
-	let offset = 0;
-	let pending = false;
-	// Unity's log blocks are separated by blank lines; a chunk boundary can split the last
-	// block in two, so we hold it back until the next pump instead of misclassifying it.
-	let carry = '';
-
-	// Each block is written as one plain appendLine() call with its internal newlines intact, so the
-	// TextMate grammar (begin: "^⛔ "/"^⚠ ", end: "^$") can match the whole multi-line block — including
-	// a stack trace — as a single colored region instead of only coloring a single line.
-	function logBlock(block: string): void {
-		if (!block.trim()) {
-			return;
-		}
-		const level = classifyBlock(block);
-		const prefix = level === 'error' ? '⛔ ' : level === 'warning' ? '⚠ ' : '';
-		channel.appendLine(prefix + block);
-		channel.appendLine('');
-	}
-
-	function emit(text: string): void {
-		const combined = carry + text;
-		const blocks = combined.split(/\r?\n\r?\n+/);
-		carry = blocks.pop() ?? '';
-		for (const block of blocks) {
-			logBlock(block);
-		}
-	}
-
-	function flushCarry(): void {
-		logBlock(carry);
-		carry = '';
-	}
-
-	function pump(): void {
-		if (pending) {
-			return;
-		}
-		pending = true;
-		const logPath = getEditorLogPath();
-		fs.stat(logPath, (statErr, stats) => {
-			if (statErr) {
-				pending = false;
-				return;
-			}
-			if (stats.size < offset) {
-				// Unity truncated/replaced the log (new Editor session started).
-				flushCarry();
-				offset = 0;
-			}
-			if (stats.size === offset) {
-				pending = false;
-				return;
-			}
-			const start = offset;
-			offset = stats.size;
-			const stream = fs.createReadStream(logPath, { start, end: stats.size - 1, encoding: 'utf8' });
-			let chunk = '';
-			stream.on('data', (data) => (chunk += data));
-			stream.on('close', () => {
-				if (chunk) {
-					emit(chunk);
-				}
-				pending = false;
-			});
-			stream.on('error', () => {
-				pending = false;
-			});
-		});
-	}
-
-	let watcher: FSWatcher | undefined;
-	try {
-		watcher = chokidar.watch(getEditorLogPath(), {
-			awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
-			ignoreInitial: true,
-		});
-		watcher.on('add', pump).on('change', pump).on('unlink', () => (offset = 0));
-	} catch {
-		// Unity has never run on this machine — the log directory doesn't exist yet.
-	}
-	pump();
-
-	context.subscriptions.push({
-		dispose: () => {
-			void watcher?.close();
-		},
-	});
 }

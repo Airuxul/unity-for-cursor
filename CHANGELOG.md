@@ -4,21 +4,30 @@
 
 - Replaced `fs.watch` with `chokidar` for `Editor.log` tailing — more reliable on Windows when the
   log file is truncated/replaced by a new Editor session.
-- `DocumentLinkProvider` for the log now scans incrementally (only newly-appended text) instead of
-  re-scanning the whole document on every update.
 - Added click-to-jump support for compiler diagnostics (`Foo.cs(10,5): error CS0246: ...`), in
   addition to the existing runtime stack-frame format (`(at Foo.cs:42)`).
 - Fixed log entries not appearing at all — the block-splitting regex only matched bare `\n\n`, but
   `Editor.log` uses CRLF, so blank-line separators never matched and everything stayed buffered.
-- Reworked `Editor.log` rendering: each log entry (message + stack trace) now prints as a single
-  plain-text block prefixed with `⛔`/`⚠` for error/warning, followed by a blank separator line, and
-  a custom TextMate grammar colors the *entire* block (not just the first line) red/yellow by
-  severity. This replaces an earlier `LogOutputChannel`-based attempt, which turned out to be
-  fundamentally unworkable: `LogOutputChannel` only colors the single string passed to
-  `error()`/`warn()`/`info()`, and its `appendLine()` silently auto-tags every call as its own
-  timestamped `[info]` line — there was no way to append plain continuation text or a blank
-  separator without it becoming spammy fake log entries. The tradeoff is losing the panel's
-  built-in Trace/Debug/Info/Warning/Error level-filter dropdown.
+- Replaced the `Editor.log` `OutputChannel` + TextMate-grammar viewer with a custom Webview panel
+  (`Unity for Cursor: Show Unity Editor Log`). Two consecutive OutputChannel-based approaches
+  (`LogOutputChannel` level tagging, then a custom TextMate grammar) both proved fundamentally
+  unworkable — coloring wasn't visible/reliable, and Unity's own diagnostic suffix lines
+  (`(Filename: Foo.cs Line: 42)`) were misclassified as standalone entries because they're
+  separated from their parent message by a blank line. The webview now:
+  - Renders each entry (message + stack trace) as one colored block by severity (red/yellow/default),
+    built via safe DOM text nodes rather than `innerHTML` (log content isn't HTML-escaped).
+  - Fixes the `(Filename: ... Line: ...)` marker bug by merging it into the preceding entry instead
+    of treating it as a new one.
+  - Keeps only the most recent 5000 entries (matching Rider/Unity Console's log-pruning behavior),
+    avoiding unbounded DOM growth against 30-40MB+ logs.
+  - Adds a toolbar: clear log, independent Error/Warning/Info filter toggles with live counts, and
+    pause/resume auto-scroll (auto-pauses when the user scrolls up).
+  - Reduces chokidar's `awaitWriteFinish` window (100ms/50ms → 50ms/20ms) to cut perceived latency.
+  - Click-to-jump now goes through `postMessage` to the extension host instead of a
+    `DocumentLinkProvider`/`command:` URI, reusing the existing `unityForCursor.openLogLocation`
+    command unchanged.
+  - Removes the now-unnecessary `unity-editor-log` TextMate grammar/language contribution and
+    `syntaxes/` folder.
 
 ## 0.1.0
 

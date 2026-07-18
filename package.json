@@ -26,21 +26,6 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
-    "languages": [
-      {
-        "id": "unity-editor-log",
-        "aliases": [
-          "Unity Editor Log"
-        ]
-      }
-    ],
-    "grammars": [
-      {
-        "language": "unity-editor-log",
-        "scopeName": "source.unity-editor-log",
-        "path": "./syntaxes/unity-editor-log.tmLanguage.json"
-      }
-    ],
     "commands": [
       {
         "command": "cursorUnityAttach.attachToEditor",
