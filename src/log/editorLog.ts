@@ -145,7 +145,7 @@ export function registerEditorLog(context: vscode.ExtensionContext): void {
 
 	function emit(text: string): void {
 		const combined = carry + text;
-		const blocks = combined.split(/\n\n+/);
+		const blocks = combined.split(/\r?\n\r?\n+/);
 		carry = blocks.pop() ?? '';
 		for (const block of blocks) {
 			if (!block.trim()) {
