@@ -1,8 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 import chokidar, { FSWatcher } from 'chokidar';
+import { getPlatform } from '../platform';
 
 // Unity runtime stack-trace frames look like: "MyScript.Update () (at Assets/Scripts/MyScript.cs:42)".
 const STACK_FRAME_PATTERN = /\(at ([^()\r\n]+):(\d+)\)/g;
@@ -42,7 +41,7 @@ export interface LogEntry {
 }
 
 function getEditorLogPath(): string {
-	return path.join(os.homedir(), 'AppData', 'Local', 'Unity', 'Editor', 'Editor.log');
+	return getPlatform().editorLogPath();
 }
 
 function classifyBlock(block: string): LogLevel {

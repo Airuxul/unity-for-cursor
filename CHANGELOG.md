@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+- Added macOS and Linux support. All OS-specific code now lives behind a `PlatformAdapter`
+  interface in `src/platform/` (Windows: PowerShell; macOS/Linux: `ps` + `lsof`); adding an OS is
+  one file plus one `case` in `src/platform/index.ts`. `Editor.log` is read from each OS's
+  documented location.
+- Fixed breakpoints in `Packages/` and `Library/PackageCache/` code never binding: Unity records
+  those sources as project-relative paths (`./Packages/...`), which ReSharper couldn't resolve. The
+  attach configuration now passes a `sourceFileMap` onto the Unity project root.
+- Excluded `-batchMode` AssetImportWorker processes from attach candidates. They share the
+  Editor's `-projectPath` and each runs its own debugger port, so a single open Editor always
+  produced a port picker instead of attaching directly.
+- The Unity project may now live in a subfolder of the workspace (e.g. a repo root with the
+  project in `Client/`). Log click-to-file links resolve against that project root.
+- Added a pre-attach "handshake + `VM_DISPOSE`" probe of Unity's debugger agent. A wedged agent
+  (left behind by a debugger that disconnected without `VM_DISPOSE`) or one already serving
+  another debugger is reported within 1.5s instead of hanging until ReSharper's timeout.
+- The Debug Console no longer pops open on attach (`internalConsoleOptions: neverOpen`). ReSharper
+  writes 700+ "Loaded assembly / Symbols not found / Thread started" lines per attach on a
+  mid-size project; they're still available in the panel.
+- Removed auto re-attach. Verified on Unity 2022.3: a Domain Reload neither drops the debug
+  session nor recreates the listening socket, and breakpoints re-bind in the new domain on their
+  own. The reattach watcher therefore never fired, and after every manual stop it polled for 25s
+  before showing a misleading "no Domain Reload detected" warning.
+
 ## 0.2.0
 
 - Replaced `fs.watch` with `chokidar` for `Editor.log` tailing — more reliable on Windows when the

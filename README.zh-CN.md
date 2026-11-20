@@ -7,7 +7,7 @@ Unity Editor 进程，并提供一系列旨在拉近与 JetBrains Rider 内置 U
 
 本插件本身不实现调试器。它负责发现与当前工作区匹配的 Unity Editor 进程、解析其调试端口，并通过
 `vscode.debug.startDebugging` 将结果交给 ReSharper 已有的 `mono` 调试适配器。除此之外的能力——日志流、断点过滤、
-自动重连——均为本插件自行实现。
+调试服务预检——均为本插件自行实现。支持 Windows、macOS 与 Linux。
 
 ## 为什么会有这个插件
 
@@ -23,7 +23,8 @@ Cursor 无法使用微软的 **C# Dev Kit** ——其授权协议限制只能在
   `(at Foo.cs:42)` 的堆栈行可直接点击跳转到对应文件和行号。
 - **按路径忽略断点** —— `unityForCursor.ignoreBreakpointsGlobs` 会自动禁用匹配路径下新增的断点（默认匹配
   `Library/` 与 `Packages/`）。
-- **Domain Reload 后自动重连** —— 对已处于 attach 状态的会话，脚本重新编译后不再需要手动重新 attach。
+- **Domain Reload 不断开** —— 调试会话在脚本重新编译后保持连接，断点自动在新域中重新生效，无需重新 attach。
+- **attach 前预检** —— Unity 调试服务失效或已被其他调试器占用时，1.5 秒内给出明确提示，而不是卡到超时。
 
 ## 前置依赖
 
@@ -79,10 +80,27 @@ npm run package   # 生成 unity-for-cursor-<version>.vsix
 
 ## 端口发现原理
 
-Unity 官方文档给出的端口公式 `56000 + (Editor PID % 1000)` 并不总是实际在用的端口。本插件改为通过
-`-projectpath` 参数匹配运行中的 `Unity.exe` 进程与当前工作区，再读取该进程实际监听的端口来确定调试端口——
-刻意不预先建立一次真实连接来验证候选端口，因为 Unity 内置的调试代理每个 Editor 会话只服务一次入站连接，
-提前的验证连接会把这唯一的连接名额消耗掉，导致随后真正的 attach 失败。
+Unity 官方文档给出的端口公式 `56000 + (Editor PID % 1000)` 并不总是实际在用的端口。本插件通过 `-projectpath`
+参数匹配运行中的 Unity Editor 进程与当前工作区（Unity 工程可以是工作区本身或其子目录），排除带 `-batchMode` 的
+AssetImportWorker 子进程（它们也各自开着调试端口），再读取该进程实际监听的端口来确定调试端口。
+
+进程与端口的查询按平台实现（`src/platform/`）：Windows 使用 PowerShell，macOS / Linux 使用 `ps` + `lsof`。
+
+### 调试服务预检
+
+真正 attach 之前，插件会对端口做一次"握手 + `VM_DISPOSE`"预检。实测（Unity 2022.3 / mono 6.13）结论：
+
+- 发送 `VM_DISPOSE` 后再断开，调试服务立即可以接受下一次连接，所以预检不会占用连接。
+- **不发 `VM_DISPOSE` 直接断开**（调试器崩溃、被强杀、attach 中途取消）会让 Unity 调试服务永久失效：端口仍在
+  监听但不再响应握手，Domain Reload 也无法恢复，只能重启 Unity。
+- 调试服务同一时间只服务一个调试器，已被 Rider / 其他窗口连接时也表现为不响应。
+
+预检在这两种情况下会立即提示，而不是让 ReSharper 一直等待到超时。
+
+### Package 代码的断点
+
+Unity 为 `Packages/`、`Library/PackageCache/` 下的代码记录的是相对工程根目录的路径（`./Packages/...`），
+插件会传入 `sourceFileMap` 把它映射到工程根目录，否则这些文件里的断点永远不会生效。
 
 ## 已知限制 / 后续规划
 
@@ -101,8 +119,14 @@ src/
   extension.ts              入口文件——串联所有功能模块
   attach/
     attach.ts                端口解析 + 调试配置 Provider
-    unityProcess.ts          Unity 进程/端口发现（基于 PowerShell）
-    reattach.ts               Domain Reload 后的自动重连
+    unityProcess.ts          匹配当前工程的 Unity Editor 进程（与平台无关）
+    agentProbe.ts            attach 前的调试服务预检
+  platform/
+    types.ts                 平台适配接口 PlatformAdapter
+    index.ts                 按 process.platform 选择实现（新增平台只需在此加一个分支）
+    windows.ts               Windows：PowerShell
+    posix.ts                 macOS / Linux：ps + lsof
+    exec.ts                  子进程执行工具
   log/
     editorLog.ts              Editor.log 实时流 + 点击跳转链接
   breakpoints/

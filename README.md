@@ -9,7 +9,8 @@ closing the gap with JetBrains Rider's built-in Unity support.
 This extension does not implement a debugger itself. It discovers the Unity Editor process that
 matches the open workspace, resolves its debug port, and hands the result to ReSharper's existing
 `mono` debug adapter via `vscode.debug.startDebugging`. Everything on top of that — log
-streaming, breakpoint filtering, auto re-attach — is this extension's own code.
+streaming, breakpoint filtering, the debugger-agent pre-check — is this extension's own code.
+Works on Windows, macOS and Linux.
 
 ## Why this exists
 
@@ -28,8 +29,10 @@ here.
   the log live, and stack frames like `(at Foo.cs:42)` jump straight to the file and line.
 - **Ignore breakpoints by path** — `unityForCursor.ignoreBreakpointsGlobs` auto-disables new
   breakpoints under matching paths (defaults to `Library/` and `Packages/`).
-- **Auto re-attach after Domain Reload** — for sessions that were already attached, a script
-  recompile no longer requires attaching again by hand.
+- **Survives Domain Reload** — the debug session stays connected across script recompiles and
+  breakpoints re-bind in the new domain; no re-attach needed.
+- **Pre-attach check** — if Unity's debugger agent is wedged or already taken by another debugger,
+  you get a clear message within 1.5s instead of a hang until timeout.
 
 ## Requirements
 
@@ -88,11 +91,34 @@ npm run package   # produces unity-for-cursor-<version>.vsix
 ## How port discovery works
 
 Unity's documented port formula (`56000 + Editor PID % 1000`) isn't always the port actually in
-use. This extension instead matches running `Unity.exe` processes to the open workspace by
-`-projectpath`, then reads the OS-level listening ports for that process to pick the right one —
-it deliberately never opens a probe connection first, since Unity's embedded debugger only accepts
-one incoming connection per Editor session, and a verification probe would consume that slot
-before the real attach gets a chance.
+use. This extension matches running Unity Editor processes to the open workspace by `-projectpath`
+(the Unity project may be the workspace folder or a subfolder of it), skips `-batchMode`
+AssetImportWorker children (each of which runs its own debugger port), then reads the OS-level
+listening ports for that process.
+
+Process and port lookups are per-platform (`src/platform/`): PowerShell on Windows, `ps` + `lsof`
+on macOS / Linux.
+
+### Debugger-agent pre-check
+
+Before the real attach, the extension does a "handshake + `VM_DISPOSE`" probe. Measured against
+Unity 2022.3 / mono 6.13:
+
+- A client that sends `VM_DISPOSE` before closing leaves the agent ready for the next connection
+  immediately, so the probe doesn't use up the slot.
+- A client that closes **without** `VM_DISPOSE` (debugger crash, kill, cancelled attach) leaves the
+  agent permanently unable to complete a handshake: the port still listens but never answers, and
+  a Domain Reload doesn't recover it. Only restarting Unity does.
+- The agent serves one debugger at a time, so one already attached (Rider, another window) looks
+  the same.
+
+The probe reports either case right away instead of letting ReSharper wait for its timeout.
+
+### Breakpoints in package code
+
+Unity records sequence-point paths for `Packages/` and `Library/PackageCache/` code relative to the
+project root (`./Packages/...`). The extension passes a `sourceFileMap` that maps them onto the
+project root; without it, breakpoints in those files never bind.
 
 ## Known limitations / roadmap
 
@@ -113,8 +139,14 @@ src/
   extension.ts              entry point — wires everything together
   attach/
     attach.ts                port resolution + debug configuration provider
-    unityProcess.ts          Unity process/port discovery (PowerShell-backed)
-    reattach.ts               Domain Reload auto re-attach
+    unityProcess.ts          match Unity Editor processes to the workspace (platform-independent)
+    agentProbe.ts            pre-attach debugger-agent check
+  platform/
+    types.ts                 PlatformAdapter interface
+    index.ts                 picks the implementation by process.platform (add a new OS here)
+    windows.ts               Windows: PowerShell
+    posix.ts                 macOS / Linux: ps + lsof
+    exec.ts                  child-process helper
   log/
     editorLog.ts              Editor.log tailing + click-to-file links
   breakpoints/

@@ -4,7 +4,6 @@ import {
 	UnityAttachDebugConfigurationProvider,
 	UNITY_FOR_CURSOR_DEBUG_TYPE,
 } from './attach/attach';
-import { registerAutoReattach } from './attach/reattach';
 import { registerEditorLog } from './log/editorLog';
 import { registerBreakpointFilter } from './breakpoints/breakpointFilter';
 import { registerCompileStatusBar } from './log/compileStatusBar';
@@ -44,7 +43,6 @@ export function activate(context: vscode.ExtensionContext): void {
 			new UnityAttachDebugConfigurationProvider()
 		)
 	);
-	registerAutoReattach(context);
 	const tailer = registerEditorLog(context);
 	registerBreakpointFilter(context);
 	registerCompileStatusBar(context, tailer);
