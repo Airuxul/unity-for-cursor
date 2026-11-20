@@ -1,8 +1,8 @@
 {
   "name": "unity-for-cursor",
   "displayName": "Unity for Cursor",
-  "description": "Discover the local Unity Editor process and attach the JetBrains \"C# by ReSharper\" mono debugger to it for breakpoint debugging.",
-  "version": "0.2.0",
+  "description": "Discover local Unity Editor processes and Player/device instances broadcasting over the network, then attach the JetBrains \"C# by ReSharper\" mono debugger to one of them for breakpoint debugging.",
+  "version": "0.3.0",
   "publisher": "local",
   "author": "Airuxul",
   "private": true,
@@ -29,36 +29,15 @@
     "commands": [
       {
         "command": "cursorUnityAttach.attachToEditor",
-        "title": "Attach to Unity Editor",
+        "title": "Attach to Unity (Editor/Player)...",
         "category": "Unity for Cursor"
       },
       {
         "command": "unityForCursor.showEditorLog",
         "title": "Show Unity Editor Log",
         "category": "Unity for Cursor"
-      },
-      {
-        "command": "unityForCursor.findSceneUsages",
-        "title": "Find Usages in Scenes/Prefabs",
-        "category": "Unity for Cursor"
       }
     ],
-    "menus": {
-      "editor/context": [
-        {
-          "command": "unityForCursor.findSceneUsages",
-          "when": "resourceLangId == csharp",
-          "group": "navigation"
-        }
-      ],
-      "explorer/context": [
-        {
-          "command": "unityForCursor.findSceneUsages",
-          "when": "resourceExtname == .cs",
-          "group": "navigation"
-        }
-      ]
-    },
     "configuration": {
       "title": "Unity for Cursor",
       "properties": {
@@ -82,11 +61,6 @@
           "type": "boolean",
           "default": true,
           "description": "悬浮在 Unity 生命周期方法（Awake/Update 等）上时显示说明。"
-        },
-        "unityForCursor.enableSceneUsagesHover": {
-          "type": "boolean",
-          "default": true,
-          "description": "悬浮在脚本的类名（声明行）上时，显示引用该脚本的场景/预制体列表并可点击跳转。"
         }
       }
     },
@@ -122,17 +96,17 @@
         },
         "initialConfigurations": [
           {
-            "name": "Unity for Cursor: Attach to Unity Editor",
+            "name": "Unity for Cursor: Attach to Unity (Editor/Player)",
             "type": "unity-for-cursor-attach",
             "request": "attach"
           }
         ],
         "configurationSnippets": [
           {
-            "label": "Unity for Cursor: Attach to Unity Editor",
-            "description": "自动发现本机运行的 Unity Editor 进程，并通过 ReSharper 的 mono 调试器 attach 上去",
+            "label": "Unity for Cursor: Attach to Unity (Editor/Player)",
+            "description": "自动发现本机运行的 Unity Editor 进程和局域网内广播的 Player/设备，选择一个通过 ReSharper 的 mono 调试器接管",
             "body": {
-              "name": "Unity for Cursor: Attach to Unity Editor",
+              "name": "Unity for Cursor: Attach to Unity (Editor/Player)",
               "type": "unity-for-cursor-attach",
               "request": "attach"
             }
@@ -144,11 +118,16 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -w -p ./",
+    "pretest": "npm run compile",
+    "test": "vscode-test",
     "package": "vsce package"
   },
   "devDependencies": {
+    "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.0.0",
     "@vscode/vsce": "^2.24.0",
     "typescript": "^5.4.0"
   },

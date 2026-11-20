@@ -25,6 +25,10 @@ here.
   running in the Unity Editor.
 - **Automatic Editor discovery** — no manual port entry; see
   [How port discovery works](#how-port-discovery-works).
+- **Player/device attach** — also discovers Player/device instances broadcasting over the network,
+  selectable alongside the local Editor. To debug multiple targets simultaneously (e.g. Editor +
+  a Player), run the attach command again and pick a different target — same as Rider's own
+  "Attach to Unity Process" flow.
 - **`Editor.log` streaming with click-to-file** — `Unity for Cursor: Show Unity Editor Log` tails
   the log live, and stack frames like `(at Foo.cs:42)` jump straight to the file and line.
 - **Ignore breakpoints by path** — `unityForCursor.ignoreBreakpointsGlobs` auto-disables new
@@ -60,6 +64,16 @@ npm run compile
 npm run package   # produces unity-for-cursor-<version>.vsix
 ```
 
+## Testing
+
+```powershell
+npm test   # compiles, then runs the suite in a real downloaded VS Code instance
+```
+
+Tests live under `src/test/` (`@vscode/test-cli` + `@vscode/test-electron` + Mocha). The first run
+downloads a pinned VS Code build into `.vscode-test/` (gitignored, excluded from the packaged `.vsix`).
+
+
 ## Install
 
 - Command Palette → `Extensions: Install from VSIX...` → pick the `.vsix`; or
@@ -71,8 +85,11 @@ npm run package   # produces unity-for-cursor-<version>.vsix
 2. Start the Unity Editor on the same project.
 3. Set a breakpoint in a `.cs` script.
 4. Trigger attach, either way:
-   - **Command Palette** → run **"Attach to Unity Editor"**.
+   - **Command Palette** → run **"Attach to Unity (Editor/Player)..."**.
    - **Run and Debug panel** → "Select debugger" → **"Unity for Cursor"**.
+   If more than one target is found (local Editor plus any Player/device broadcasting on the
+   network), a QuickPick lets you pick which one to attach to. To attach to several targets at
+   once, run the command again for each one.
 5. Enter Play Mode and confirm the breakpoint is hit.
 
 ## Configuration
@@ -85,7 +102,7 @@ npm run package   # produces unity-for-cursor-<version>.vsix
 
 | Command | Description |
 |---|---|
-| `Unity for Cursor: Attach to Unity Editor` | Discover and attach to the local Unity Editor process. |
+| `Unity for Cursor: Attach to Unity (Editor/Player)...` | Discover local Editor processes and networked Players, and attach to one. Run again to attach to another target simultaneously. |
 | `Unity for Cursor: Show Unity Editor Log` | Open the live-tailed `Editor.log` output channel. |
 
 ## How port discovery works
@@ -120,17 +137,19 @@ Unity records sequence-point paths for `Packages/` and `Library/PackageCache/` c
 project root (`./Packages/...`). The extension passes a `sourceFileMap` that maps them onto the
 project root; without it, breakpoints in those files never bind.
 
+Player/device targets are discovered differently: Unity's Player Connection protocol has each
+debuggable instance re-announce itself roughly once a second over UDP multicast (`225.0.0.222`,
+across a handful of well-known ports). The debug TCP port is embedded in that announcement's
+`[Id]` field; this isn't a documented stable API, so it's treated the same way as the Editor's
+formula-port guess — a best-effort heuristic, not a guarantee.
+
 ## Known limitations / roadmap
 
 Deliberately out of scope for now:
 
-- **Multi-target attach** — attaching to a remote Player/device is a different discovery protocol
-  (Unity broadcasts over UDP multicast, e.g. `225.0.0.222:54997`, with the debug port embedded in
-  the `[Id]` field of the announcement message). Not implemented; would need a `dgram`-based
-  listener alongside `unityProcess.ts`, reusing the same `attach.ts` orchestration.
 - **Attach and Wait** — suspending the Editor/Player at startup until a debugger connects (Unity's
   `-waitForManagedDebugger` family of options) is not wired up; you can only attach after the
-  Editor is already running.
+  Editor/Player is already running.
 
 ## Project structure
 
@@ -138,8 +157,10 @@ Deliberately out of scope for now:
 src/
   extension.ts              entry point — wires everything together
   attach/
-    attach.ts                port resolution + debug configuration provider
+    attach.ts                target discovery/selection + debug configuration provider
+    attachTarget.ts          Editor / Player attach-target type
     unityProcess.ts          match Unity Editor processes to the workspace (platform-independent)
+    discoverPlayers.ts       LAN Player/device discovery (UDP multicast)
     agentProbe.ts            pre-attach debugger-agent check
   platform/
     types.ts                 PlatformAdapter interface
@@ -151,6 +172,13 @@ src/
     editorLog.ts              Editor.log tailing + click-to-file links
   breakpoints/
     breakpointFilter.ts        ignore-by-glob breakpoint auto-disable
+  hover/
+    lifecycleHover.ts          Unity lifecycle-method hover tooltip
+  analysis/
+    csharpSymbols.ts           shared DocumentSymbol/TypeHierarchy helpers (ReSharper-backed)
+  test/
+    extension.test.ts          activation smoke test
+    analysis/csharpSymbols.test.ts  unit tests for the shared analysis helpers
 resources/
   icon.png                    extension icon
 ```

@@ -1,13 +1,8 @@
 import * as vscode from 'vscode';
-import {
-	attachToUnityEditor,
-	UnityAttachDebugConfigurationProvider,
-	UNITY_FOR_CURSOR_DEBUG_TYPE,
-} from './attach/attach';
+import { runAttachFlow, UnityAttachDebugConfigurationProvider, UNITY_FOR_CURSOR_DEBUG_TYPE } from './attach/attach';
 import { registerEditorLog } from './log/editorLog';
 import { registerBreakpointFilter } from './breakpoints/breakpointFilter';
 import { registerCompileStatusBar } from './log/compileStatusBar';
-import { registerSceneUsages, registerSceneUsagesHover } from './usages/sceneUsages';
 import { registerLifecycleHover } from './hover/lifecycleHover';
 
 const RESHARPER_EXTENSION_ID = 'JetBrains.resharper-code';
@@ -37,7 +32,7 @@ async function ensureResharperInstalled(): Promise<void> {
 
 export function activate(context: vscode.ExtensionContext): void {
 	context.subscriptions.push(
-		vscode.commands.registerCommand('cursorUnityAttach.attachToEditor', attachToUnityEditor),
+		vscode.commands.registerCommand('cursorUnityAttach.attachToEditor', runAttachFlow),
 		vscode.debug.registerDebugConfigurationProvider(
 			UNITY_FOR_CURSOR_DEBUG_TYPE,
 			new UnityAttachDebugConfigurationProvider()
@@ -46,8 +41,6 @@ export function activate(context: vscode.ExtensionContext): void {
 	const tailer = registerEditorLog(context);
 	registerBreakpointFilter(context);
 	registerCompileStatusBar(context, tailer);
-	registerSceneUsages(context);
-	registerSceneUsagesHover(context);
 	registerLifecycleHover(context);
 	void ensureResharperInstalled();
 }

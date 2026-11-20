@@ -1,7 +1,10 @@
 .gitignore
 .vscodeignore
+.vscode-test.mjs
+.vscode-test/**
 .github/**
 tsconfig.json
 package-lock.json
 src/**
 out/**/*.map
+out/test/**

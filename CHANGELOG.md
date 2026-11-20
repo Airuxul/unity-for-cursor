@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - Added macOS and Linux support. All OS-specific code now lives behind a `PlatformAdapter`
   interface in `src/platform/` (Windows: PowerShell; macOS/Linux: `ps` + `lsof`); adding an OS is
@@ -24,6 +24,22 @@
   session nor recreates the listening socket, and breakpoints re-bind in the new domain on their
   own. The reattach watcher therefore never fired, and after every manual stop it polled for 25s
   before showing a misleading "no Domain Reload detected" warning.
+- Added a hover on Unity lifecycle methods (`Awake`/`Update`/etc.) inside a class that extends a known
+  Unity base type (`MonoBehaviour`/`Editor`/`EditorWindow`/`ScriptableObject`), including through custom
+  intermediate base classes. Backed by ReSharper Code's real symbol table and type hierarchy
+  (`vscode.executeDocumentSymbolProvider` + `vscode.prepareTypeHierarchy`/`provideSupertypes`) via a new
+  shared `analysis/csharpSymbols.ts` module, not text/regex heuristics.
+- Added an automated test suite for the extension itself (`@vscode/test-cli` + `@vscode/test-electron` +
+  Mocha, run via `npm test`), covering activation and the shared analysis helpers.
+- Added Player/device attach: `Attach to Unity (Editor/Player)...` now also discovers Player/device
+  instances broadcasting Unity's UDP multicast Player Connection announcements (`225.0.0.222`, ports
+  `54997`/`34997`/`57997`/`58997`), in addition to the existing local Editor process discovery. Selecting
+  from more than one found target picks one to attach to at a time, matching Rider's own "Attach to Unity
+  Process" flow — to debug multiple targets simultaneously (e.g. Editor + a Player), run the command again
+  and pick a different target; each gets its own concurrent `mono` debug session with a distinct name.
+- Removed "Find Usages in Scenes/Prefabs" (command, editor/explorer context menu entries and the
+  `enableSceneUsagesHover` hover button). A full GUID scan of every scene/prefab is too heavy for
+  this extension; use the Unity Editor's own "Find References In Scene" / search instead.
 
 ## 0.2.0
 

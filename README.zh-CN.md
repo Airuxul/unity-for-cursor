@@ -19,6 +19,9 @@ Cursor 无法使用微软的 **C# Dev Kit** ——其授权协议限制只能在
 
 - **调试** —— 支持断点（含异常断点），可以对 Unity Editor 中运行的 C# 代码单步调试。
 - **自动发现 Editor 进程** —— 无需手动填端口，原理见下方[端口发现原理](#端口发现原理)。
+- **Player/设备 attach** —— 同时发现局域网内广播的 Player/设备实例，可与本机 Editor 一起选择 attach。需要同时
+  调试多个目标（例如 Editor + 一个 Player）时，再次运行 attach 命令并选择另一个目标即可——和 Rider 自己的
+  "Attach to Unity Process" 流程一致。
 - **`Editor.log` 实时流 + 点击跳转** —— `Unity for Cursor: Show Unity Editor Log` 命令实时输出日志，形如
   `(at Foo.cs:42)` 的堆栈行可直接点击跳转到对应文件和行号。
 - **按路径忽略断点** —— `unityForCursor.ignoreBreakpointsGlobs` 会自动禁用匹配路径下新增的断点（默认匹配
@@ -50,6 +53,16 @@ npm run compile
 npm run package   # 生成 unity-for-cursor-<version>.vsix
 ```
 
+## 测试
+
+```powershell
+npm test   # 先编译，再在一个真实下载的 VS Code 实例中运行测试
+```
+
+测试代码位于 `src/test/`（基于 `@vscode/test-cli` + `@vscode/test-electron` + Mocha）。首次运行会下载一份固定版本的
+VS Code 到 `.vscode-test/`（已加入 `.gitignore`，且不会被打包进 `.vsix`）。
+
+
 ## 安装
 
 - 命令面板 → `Extensions: Install from VSIX...` → 选择 `.vsix`；或
@@ -61,8 +74,10 @@ npm run package   # 生成 unity-for-cursor-<version>.vsix
 2. 在同一个项目上启动 Unity Editor。
 3. 在某个 `.cs` 脚本中打上断点。
 4. 触发 attach，二选一：
-   - **命令面板** → 运行 **"Attach to Unity Editor"**。
+   - **命令面板** → 运行 **"Attach to Unity (Editor/Player)..."**。
    - **Run and Debug 面板** → "Select debugger" → **"Unity for Cursor"**。
+   如果发现了多个目标（本机 Editor 加上局域网内广播的任意 Player/设备），会弹出一个 QuickPick 让你选择其中
+   一个 attach。需要同时 attach 多个目标时，针对每个目标再运行一次该命令即可。
 5. 进入 Play Mode，确认断点被命中。
 
 ## 配置项
@@ -75,7 +90,7 @@ npm run package   # 生成 unity-for-cursor-<version>.vsix
 
 | 命令 | 说明 |
 |---|---|
-| `Unity for Cursor: Attach to Unity Editor` | 发现并 attach 到本机运行的 Unity Editor 进程。 |
+| `Unity for Cursor: Attach to Unity (Editor/Player)...` | 发现本机 Editor 进程和局域网内广播的 Player，选择一个 attach；需要同时 attach 多个目标时再次运行该命令。 |
 | `Unity for Cursor: Show Unity Editor Log` | 打开实时输出 `Editor.log` 的 Output Channel。 |
 
 ## 端口发现原理
@@ -102,15 +117,17 @@ AssetImportWorker 子进程（它们也各自开着调试端口），再读取�
 Unity 为 `Packages/`、`Library/PackageCache/` 下的代码记录的是相对工程根目录的路径（`./Packages/...`），
 插件会传入 `sourceFileMap` 把它映射到工程根目录，否则这些文件里的断点永远不会生效。
 
+Player/设备目标的发现方式不同：Unity 的 Player Connection 协议下，每个可调试的实例大约每秒通过 UDP 组播
+（`225.0.0.222`，配合几个固定端口）重新广播一次自身信息，调试用的 TCP 端口内嵌在广播消息的 `[Id]` 字段中。
+这不是一份有正式文档保证稳定的公开 API，因此和 Editor 的公式端口猜测一样，属于尽力而为的启发式实现，不作
+稳定性保证。
+
 ## 已知限制 / 后续规划
 
 以下功能目前刻意未实现：
 
-- **多目标 attach** —— attach 到远程 Player/设备使用的是完全不同的发现协议（Unity 通过 UDP 组播广播，例如
-  `225.0.0.222:54997`，调试端口内嵌在广播消息的 `[Id]` 字段中）。尚未实现；如需支持，需要在 `unityProcess.ts`
-  之外新增一个基于 `dgram` 的监听器，并复用现有的 `attach.ts` 编排逻辑。
 - **Attach and Wait** —— 让 Editor/Player 在启动时挂起、等待调试器连接后再继续执行（对应 Unity 的
-  `-waitForManagedDebugger` 系列选项），目前未接入；只能在 Editor 已经运行起来之后再 attach。
+  `-waitForManagedDebugger` 系列选项），目前未接入；只能在 Editor/Player 已经运行起来之后再 attach。
 
 ## 项目结构
 
@@ -118,8 +135,10 @@ Unity 为 `Packages/`、`Library/PackageCache/` 下的代码记录的是相对�
 src/
   extension.ts              入口文件——串联所有功能模块
   attach/
-    attach.ts                端口解析 + 调试配置 Provider
+    attach.ts                目标发现/选择 + 调试配置 Provider
+    attachTarget.ts          Editor / Player attach 目标类型
     unityProcess.ts          匹配当前工程的 Unity Editor 进程（与平台无关）
+    discoverPlayers.ts       局域网 Player/设备发现（基于 UDP 组播）
     agentProbe.ts            attach 前的调试服务预检
   platform/
     types.ts                 平台适配接口 PlatformAdapter
@@ -131,6 +150,13 @@ src/
     editorLog.ts              Editor.log 实时流 + 点击跳转链接
   breakpoints/
     breakpointFilter.ts        按 glob 忽略断点的自动禁用逻辑
+  hover/
+    lifecycleHover.ts          Unity 生命周期方法 hover 提示
+  analysis/
+    csharpSymbols.ts           共享的 DocumentSymbol/TypeHierarchy 辅助函数（ReSharper 语义查询）
+  test/
+    extension.test.ts          激活冒烟测试
+    analysis/csharpSymbols.test.ts  共享分析辅助函数的单元测试
 resources/
   icon.png                    插件图标
 ```

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { bareSymbolName, extendsKnownUnityBaseType, findInnermostContaining, getFlatSymbols } from '../analysis/csharpSymbols';
 
 // Covers the common subset of Unity "message methods" actually seen day-to-day (matching what
 // Rider's own Unity support surfaces in practice) — not an exhaustive list of every callback
@@ -48,24 +49,6 @@ const LIFECYCLE_METHODS: Record<string, string> = {
 const DECLARATION_LINE_PATTERN =
 	/(?:private|protected|internal|public)?\s*(?:void|IEnumerator|System\.Collections\.IEnumerator)\s+(\w+)\s*\(/;
 
-// Unity base classes this heuristic recognizes directly. Only a single level of inheritance is
-// checked — a class extending a custom intermediate base (e.g. "MyBaseBehaviour") won't be
-// recognized, since that would require real semantic/type analysis this extension doesn't have.
-const KNOWN_UNITY_BASE_TYPES = ['MonoBehaviour', 'Editor', 'EditorWindow', 'ScriptableObject'];
-const CLASS_DECLARATION_PATTERN = /class\s+\w+\s*:\s*([\w.,\s<>]+)/;
-const MAX_LINES_TO_SCAN_UPWARD = 500;
-
-function isInsideKnownUnityClass(document: vscode.TextDocument, fromLine: number): boolean {
-	const start = Math.max(0, fromLine - MAX_LINES_TO_SCAN_UPWARD);
-	for (let i = fromLine; i >= start; i--) {
-		const match = document.lineAt(i).text.match(CLASS_DECLARATION_PATTERN);
-		if (match) {
-			return KNOWN_UNITY_BASE_TYPES.some((base) => match[1].includes(base));
-		}
-	}
-	return false;
-}
-
 export function registerLifecycleHover(context: vscode.ExtensionContext): void {
 	if (!vscode.workspace.getConfiguration('unityForCursor').get<boolean>('enableLifecycleHover', true)) {
 		return;
@@ -75,7 +58,7 @@ export function registerLifecycleHover(context: vscode.ExtensionContext): void {
 		vscode.languages.registerHoverProvider(
 			{ language: 'csharp' },
 			{
-				provideHover(document, position) {
+				async provideHover(document, position) {
 					const wordRange = document.getWordRangeAtPosition(position, /[A-Za-z_]\w*/);
 					if (!wordRange) {
 						return undefined;
@@ -92,7 +75,14 @@ export function registerLifecycleHover(context: vscode.ExtensionContext): void {
 						return undefined;
 					}
 
-					if (!isInsideKnownUnityClass(document, position.line)) {
+					const symbols = await getFlatSymbols(document);
+					const enclosingMethod = findInnermostContaining(symbols, wordRange.start, vscode.SymbolKind.Method);
+					if (!enclosingMethod || bareSymbolName(enclosingMethod.name) !== word) {
+						return undefined;
+					}
+
+					const enclosingClass = findInnermostContaining(symbols, wordRange.start, vscode.SymbolKind.Class);
+					if (!enclosingClass || !(await extendsKnownUnityBaseType(document.uri, enclosingClass.namePosition))) {
 						return undefined;
 					}
 
